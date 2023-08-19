@@ -1,5 +1,5 @@
 CC := gcc
-CFLAGS := -Wall -Wextra -MMD
+CFLAGS := -Wall -Wextra -MMD -std=gnu11
 DEBUG_FLAGS := -g
 PROD_FLAGS := -O2
 

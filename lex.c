@@ -1,6 +1,8 @@
+#include "hasc.h"
 #include "lex.h"
-#include <ctype.h>
 
+#include <ctype.h>
+#include <stdio.h>
 #include <assert.h>
 
 void hlex_init(hlex_t *lex, u8 *pc, size_t plen) {
@@ -23,7 +25,7 @@ bool hlex_is_eof(hlex_t *lex) {
 	return lex->pc >= lex->pend;
 }
 
-hlex_token_t hlex_next(hlex_t *lex) {
+hlex_token_t hlex_next(hlex_t *lex, hcc_ctx_t *ctx) {
 	while (lex->pc < lex->pend) {
 		u8 ch = *lex->pc;
 
@@ -47,8 +49,16 @@ hlex_token_t hlex_next(hlex_t *lex) {
 
 			// TODO: keywords, token types...
 
+			htok_t type = htok_ident;
+
+			if (hsv_memcmp_literal(start, len, "fn")) {
+				type = htok_fn;
+			} else if (hsv_memcmp_literal(start, len, "extern")) {
+				type = htok_extern;
+			}
+
 			return (hlex_token_t){
-				.type = htok_ident,
+				.type = type,
 				.row = lex->line_nr,
 				.col = lex->pc - lex->plast_nl - len,
 				.len = len,
@@ -75,6 +85,14 @@ hlex_token_t hlex_next(hlex_t *lex) {
 
 			u8 ch1 = lex->pc + 1 < lex->pend ? lex->pc[1] : 0;
 			u8 ch2 = lex->pc + 2 < lex->pend ? lex->pc[2] : 0;
+
+			u32 row = lex->line_nr;
+			u32 col = lex->pc - lex->plast_nl - 1;
+
+			hlex_token_t token = {
+				.row = row,
+				.col = col,
+			};
 			
 			switch (ch) {
 				case '+':
@@ -113,6 +131,7 @@ hlex_token_t hlex_next(hlex_t *lex) {
 				case '!':
 					if (ch1 == '=') {
 						tok = htok_neq;
+						lex->pc++;
 					} else {
 						tok = htok_not;
 					}
@@ -186,19 +205,24 @@ hlex_token_t hlex_next(hlex_t *lex) {
 					tok = htok_cbrace;
 					break;
 				default:
-					// TODO: set last error
-					longjmp(lex->lex_err, 1);
+					hcc_err_with_pos(ctx, token, "unexpected character '%c'", ch);
 			}
 
+			token.type = tok;
 			lex->pc++;
 
-			return (hlex_token_t){
-				.type = tok,
-				.row = lex->line_nr,
-				.col = lex->pc - lex->plast_nl - 1,
-			};
+			return token;
 		}
 	}
 
 	assert_not_reached();
+}
+
+const char *htok_name(htok_t tok) {
+	#define X(name) \
+		if (tok == name) return #name;
+    #include "tok.def"
+    #undef X
+	
+	return "unknown token";
 }

@@ -4,6 +4,8 @@
 #include <sys/types.h>
 #include <stdbool.h>
 #include <assert.h>
+#include <stdnoreturn.h>
+#include <string.h>
 
 typedef uint8_t u8;
 typedef uint16_t u16;
@@ -19,3 +21,14 @@ typedef int64_t i64;
 #else
 	#define assert_not_reached()  assert(0 && "assert_not_reached")
 #endif
+
+#define MAYBE_UNUSED __attribute__((unused))
+
+#define hsv_memcmp_literal(a, alen, b) hsv_memcmp(a, alen, (u8 *)b, sizeof(b "") - 1)
+
+static MAYBE_UNUSED bool hsv_memcmp(u8 *a, size_t alen, u8 *b, size_t blen) {
+    if (alen != blen) {
+        return false;
+    }
+    return memcmp(a, b, alen) == 0;
+}
