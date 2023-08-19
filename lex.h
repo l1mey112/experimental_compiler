@@ -14,6 +14,7 @@ void hlex_init(hlex_t *lex, u8 *pc, size_t plen);
 hlex_token_t hlex_next(hlex_t *lex, hcc_ctx_t *ctx);
 bool hlex_is_eof(hlex_t *lex);
 const char *htok_name(htok_t tok);
+void hlex_token_dump(hlex_token_t token);
 
 struct hlex_t {
 	u8 *pc;
@@ -25,7 +26,7 @@ struct hlex_t {
 };
 
 enum htok_t {
-    #define X(name) name,
+    #define X(name, _) name,
     #include "tok.def"
     #undef X
 };

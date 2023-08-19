@@ -55,6 +55,8 @@ hlex_token_t hlex_next(hlex_t *lex, hcc_ctx_t *ctx) {
 				type = htok_fn;
 			} else if (hsv_memcmp_literal(start, len, "extern")) {
 				type = htok_extern;
+			} else if (hsv_memcmp_literal(start, len, "asm")) {
+				type = htok_asm;
 			}
 
 			return (hlex_token_t){
@@ -88,8 +90,10 @@ hlex_token_t hlex_next(hlex_t *lex, hcc_ctx_t *ctx) {
 
 			u32 row = lex->line_nr;
 			u32 col = lex->pc - lex->plast_nl - 1;
+			u32 len = 1;
 
 			hlex_token_t token = {
+				.p = lex->pc,
 				.row = row,
 				.col = col,
 			};
@@ -99,6 +103,7 @@ hlex_token_t hlex_next(hlex_t *lex, hcc_ctx_t *ctx) {
 					if (ch1 == '+') {
 						tok = htok_inc;
 						lex->pc++;
+						len = 2;
 					} else {
 						tok = htok_add;
 					}
@@ -107,6 +112,7 @@ hlex_token_t hlex_next(hlex_t *lex, hcc_ctx_t *ctx) {
 					if (ch1 == '-') {
 						tok = htok_dec;
 						lex->pc++;
+						len = 2;
 					} else {
 						tok = htok_sub;
 					}
@@ -124,6 +130,7 @@ hlex_token_t hlex_next(hlex_t *lex, hcc_ctx_t *ctx) {
 					if (ch1 == '=') {
 						tok = htok_eq;
 						lex->pc++;
+						len = 2;
 					} else {
 						tok = htok_assign;
 					}
@@ -139,6 +146,7 @@ hlex_token_t hlex_next(hlex_t *lex, hcc_ctx_t *ctx) {
 				case '<':
 					if (ch1 == '<') {
 						tok = htok_lshift;
+						len = 2;
 						lex->pc++;
 					} else {
 						tok = htok_lt;
@@ -148,8 +156,10 @@ hlex_token_t hlex_next(hlex_t *lex, hcc_ctx_t *ctx) {
 					if (ch1 == '>') {
 						if (ch2 == '>') {
 							tok = htok_rushift;
+							len = 3;
 							lex->pc += 2;
 						} else {
+							len = 2;
 							tok = htok_rshift;
 							lex->pc++;
 						}
@@ -160,6 +170,7 @@ hlex_token_t hlex_next(hlex_t *lex, hcc_ctx_t *ctx) {
 				case '&':
 					if (ch1 == '&') {
 						tok = htok_and;
+						len = 2;
 						lex->pc++;
 					} else {
 						tok = htok_band;
@@ -169,6 +180,7 @@ hlex_token_t hlex_next(hlex_t *lex, hcc_ctx_t *ctx) {
 				case '|':
 					if (ch1 == '|') {
 						tok = htok_or;
+						len = 2;
 						lex->pc++;
 					} else {
 						tok = htok_bor;
@@ -204,10 +216,14 @@ hlex_token_t hlex_next(hlex_t *lex, hcc_ctx_t *ctx) {
 				case '}':
 					tok = htok_cbrace;
 					break;
+				case ':':
+					tok = htok_colon;
+					break;
 				default:
 					hcc_err_with_pos(ctx, token, "unexpected character '%c'", ch);
 			}
 
+			token.len = len;
 			token.type = tok;
 			lex->pc++;
 
@@ -215,14 +231,19 @@ hlex_token_t hlex_next(hlex_t *lex, hcc_ctx_t *ctx) {
 		}
 	}
 
-	assert_not_reached();
+	assert_not_reached(); // can't call next() whilst EOF
 }
 
 const char *htok_name(htok_t tok) {
-	#define X(name) \
-		if (tok == name) return #name;
+	#define X(name, lit) \
+		if (tok == name) return lit;
     #include "tok.def"
     #undef X
 	
 	return "unknown token";
+}
+
+void hlex_token_dump(hlex_token_t token) {
+	printf("%u:%u:\t", token.row, token.col);
+	printf("'%.*s' - %s\n", token.len, token.p, htok_name(token.type));
 }
