@@ -43,13 +43,16 @@ static void hparser_fn_body_stmt(hcc_ctx_t *ctx, hproc_t *proc) {
 }
 
 static void hparser_fn_body(hcc_ctx_t *ctx, hproc_t *proc) {
-	do {
+	while (true) {
 		hlex_token_t ltoken = ctx->parser.tok;
 		if (!hparser_next_if_not_eof(ctx)) {
 			hcc_err_with_pos(ctx, ltoken, "unexpected EOF after token, expected `}`");
 		}
+		if (ctx->parser.tok.type == htok_cbrace) {
+			return;
+		}
 		hparser_fn_body_stmt(ctx, proc);
-	} while (ctx->parser.tok.type != htok_cbrace);
+	}
 }
 
 static void hparser_fn_asm_body(hcc_ctx_t *ctx, hproc_t *proc) {

@@ -51,13 +51,13 @@ hlex_token_t hlex_next(hlex_t *lex, hcc_ctx_t *ctx) {
 
 			htok_t type = htok_ident;
 
-			if (hsv_memcmp_literal(start, len, "fn")) {
-				type = htok_fn;
-			} else if (hsv_memcmp_literal(start, len, "extern")) {
-				type = htok_extern;
-			} else if (hsv_memcmp_literal(start, len, "asm")) {
-				type = htok_asm;
-			}
+			if (0);
+			#define X_ONLY_LITERALS
+			#define X(name, lit) \
+				else if (hsv_memcmp_literal(start, len, lit)) type = name;
+			#include "tok.def"
+			#undef X
+			#undef X_ONLY_LITERALS
 
 			return (hlex_token_t){
 				.type = type,

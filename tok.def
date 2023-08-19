@@ -1,3 +1,19 @@
+X(htok_fn, "fn")
+X(htok_extern, "extern")
+X(htok_asm, "asm")
+X(htok_i8, "i8")
+X(htok_i16, "i16")
+X(htok_i32, "i32")
+X(htok_i64, "i64")
+X(htok_u8, "u8")
+X(htok_u16, "u16")
+X(htok_u32, "u32")
+X(htok_u64, "u64")
+X(htok_f32, "f32")
+X(htok_f64, "f64")
+
+#ifndef X_ONLY_LITERALS
+
 X(htok_add, "+")
 X(htok_sub, "-")
 X(htok_mul, "*")
@@ -30,9 +46,7 @@ X(htok_obrace, "{")
 X(htok_cbrace, "}")
 X(htok_colon, ":")
 
-X(htok_fn, "fn")
-X(htok_extern, "extern")
-X(htok_asm, "asm")
-
 X(htok_ident, "ident")
 X(htok_integer, "integer")
+
+#endif
