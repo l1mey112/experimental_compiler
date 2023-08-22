@@ -42,6 +42,8 @@ htype_t htable_intern_append(hcc_ctx_t *ctx, htypeinfo_t type) {
 		}
 	}
 
+	assert(size <= _HT_CONCRETE_MAX || size - _HT_CONCRETE_MAX < UINT16_MAX);
+
 	// mallocate
 	if (type.type == HT_FN) {
 		if (type.d_fn.args_len == 0) {
