@@ -6,7 +6,7 @@ typedef struct hparser_t hparser_t;
 
 struct hparser_t {
 	hlex_t lex_c;
-	hlex_token_t tok;
+	htoken_t tok;
 };
 
 typedef struct hcc_ctx_t hcc_ctx_t; // forward declaration

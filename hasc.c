@@ -2,10 +2,13 @@
 #include <setjmp.h>
 #include <stdarg.h>
 
+#define STB_DS_IMPLEMENTATION
+#include "stb_ds.h"
+
 #include "hasc.h"
 #include "lex.h"
 
-void hcc_err_with_pos(hcc_ctx_t *ctx, hlex_token_t tok, const char *fmt, ...) {
+void hcc_err_with_pos(hcc_ctx_t *ctx, htoken_t tok, const char *fmt, ...) {
 	char buf[128];
 
 	va_list args;

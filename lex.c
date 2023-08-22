@@ -25,7 +25,7 @@ bool hlex_is_eof(hlex_t *lex) {
 	return lex->pc >= lex->pend;
 }
 
-hlex_token_t hlex_next(hlex_t *lex, hcc_ctx_t *ctx) {
+htoken_t hlex_next(hlex_t *lex, hcc_ctx_t *ctx) {
 	while (lex->pc < lex->pend) {
 		u8 ch = *lex->pc;
 
@@ -49,7 +49,7 @@ hlex_token_t hlex_next(hlex_t *lex, hcc_ctx_t *ctx) {
 
 			// TODO: keywords, token types...
 
-			htok_t type = htok_ident;
+			htok_t type = HTOK_IDENT;
 
 			if (0);
 			#define X_ONLY_LITERALS
@@ -59,7 +59,7 @@ hlex_token_t hlex_next(hlex_t *lex, hcc_ctx_t *ctx) {
 			#undef X
 			#undef X_ONLY_LITERALS
 
-			return (hlex_token_t){
+			return (htoken_t){
 				.type = type,
 				.row = lex->line_nr,
 				.col = lex->pc - lex->plast_nl - len,
@@ -75,8 +75,8 @@ hlex_token_t hlex_next(hlex_t *lex, hcc_ctx_t *ctx) {
 			// get length and id pointer
 			size_t len = lex->pc - start;
 
-			return (hlex_token_t){
-				.type = htok_integer,
+			return (htoken_t){
+				.type = HTOK_INTEGER,
 				.row = lex->line_nr,
 				.col = lex->pc - lex->plast_nl - len,
 				.len = len,
@@ -92,7 +92,7 @@ hlex_token_t hlex_next(hlex_t *lex, hcc_ctx_t *ctx) {
 			u32 col = lex->pc - lex->plast_nl - 1;
 			u32 len = 1;
 
-			hlex_token_t token = {
+			htoken_t token = {
 				.p = lex->pc,
 				.row = row,
 				.col = col,
@@ -101,123 +101,126 @@ hlex_token_t hlex_next(hlex_t *lex, hcc_ctx_t *ctx) {
 			switch (ch) {
 				case '+':
 					if (ch1 == '+') {
-						tok = htok_inc;
+						tok = HTOK_INC;
 						lex->pc++;
 						len = 2;
 					} else {
-						tok = htok_add;
+						tok = HTOK_ADD;
 					}
 					break;
 				case '-':
 					if (ch1 == '-') {
-						tok = htok_dec;
+						tok = HTOK_DEC;
 						lex->pc++;
 						len = 2;
 					} else {
-						tok = htok_sub;
+						tok = HTOK_SUB;
 					}
 					break;
 				case '*':
-					tok = htok_mul;
+					tok = HTOK_MUL;
 					break;
 				case '/':
-					tok = htok_div;
+					tok = HTOK_DIV;
 					break;
 				case '%':
-					tok = htok_mod;
+					tok = HTOK_MOD;
 					break;
 				case '=':
 					if (ch1 == '=') {
-						tok = htok_eq;
+						tok = HTOK_EQ;
 						lex->pc++;
 						len = 2;
 					} else {
-						tok = htok_assign;
+						tok = HTOK_ASSIGN;
 					}
 					break;
 				case '!':
 					if (ch1 == '=') {
-						tok = htok_neq;
+						tok = HTOK_NEQ;
 						lex->pc++;
 					} else {
-						tok = htok_not;
+						tok = HTOK_NOT;
 					}
 					break;
 				case '<':
 					if (ch1 == '<') {
-						tok = htok_lshift;
+						tok = HTOK_LSHIFT;
 						len = 2;
 						lex->pc++;
 					} else {
-						tok = htok_lt;
+						tok = HTOK_LT;
 					}
 					break;
 				case '>':
 					if (ch1 == '>') {
 						if (ch2 == '>') {
-							tok = htok_rushift;
+							tok = HTOK_RUSHIFT;
 							len = 3;
 							lex->pc += 2;
 						} else {
 							len = 2;
-							tok = htok_rshift;
+							tok = HTOK_RSHIFT;
 							lex->pc++;
 						}
 					} else {
-						tok = htok_gt;
+						tok = HTOK_GT;
 					}
 					break;
 				case '&':
 					if (ch1 == '&') {
-						tok = htok_and;
+						tok = HTOK_AND;
 						len = 2;
 						lex->pc++;
 					} else {
-						tok = htok_band;
+						tok = HTOK_BAND;
 					}
-					tok = htok_band;
+					tok = HTOK_BAND;
 					break;
 				case '|':
 					if (ch1 == '|') {
-						tok = htok_or;
+						tok = HTOK_OR;
 						len = 2;
 						lex->pc++;
 					} else {
-						tok = htok_bor;
+						tok = HTOK_BOR;
 					}
 					break;
 				case '^':
-					tok = htok_xor;
+					tok = HTOK_XOR;
 					break;
 				case '~':
-					tok = htok_tilde;
+					tok = HTOK_TILDE;
 					break;
 				case '.':
-					tok = htok_dot;
+					tok = HTOK_DOT;
 					break;
 				case ',':
-					tok = htok_comma;
+					tok = HTOK_COMMA;
 					break;
 				case '(':
-					tok = htok_opar;
+					tok = HTOK_OPAR;
 					break;
 				case ')':
-					tok = htok_cpar;
+					tok = HTOK_CPAR;
 					break;
 				case '[':
-					tok = htok_osq;
+					tok = HTOK_OSQ;
 					break;
 				case ']':
-					tok = htok_csq;
+					tok = HTOK_CSQ;
 					break;
 				case '{':
-					tok = htok_obrace;
+					tok = HTOK_OBRACE;
 					break;
 				case '}':
-					tok = htok_cbrace;
+					tok = HTOK_CBRACE;
 					break;
 				case ':':
-					tok = htok_colon;
+					tok = HTOK_COLON;
+					break;
+				case '?':
+					tok = HTOK_QUESTION;
 					break;
 				default:
 					hcc_err_with_pos(ctx, token, "unexpected character '%c'", ch);
@@ -243,7 +246,7 @@ const char *htok_name(htok_t tok) {
 	return "unknown token";
 }
 
-void hlex_token_dump(hlex_token_t token) {
+void hlex_token_dump(htoken_t token) {
 	printf("%u:%u:\t", token.row, token.col);
 	printf("'%.*s' - %s\n", token.len, token.p, htok_name(token.type));
 }
