@@ -4,6 +4,7 @@
 #include "parse.h"
 #include "hasc.h"
 #include "lex.h"
+#include "stb_ds.h"
 
 void hparser_init(hcc_ctx_t *ctx, u8 *pc, size_t plen) {
 	hlex_init(&ctx->parser.lex_c, pc, plen);
@@ -82,18 +83,11 @@ static void hparser_fn_stmt(hcc_ctx_t *ctx) {
 		hparser_expect_next(ctx, htok_ident);
 		hlex_token_t arg_type = ctx->parser.tok;
 
-		// debug dump
-		printf("arg {\n");
-		hlex_token_dump(arg_name);
-		hlex_token_dump(arg_type);
-		printf("}\n");
 
-		/* hproc_arg_t arg = {
-			.name = arg_name,
-			.type = arg_type,
+		harg_t arg ={
+			.name = hsv_make_owned(arg_name.p, arg_name.len)
 		};
-
-		hvec_push(&proc.args, arg); */
+		stbds_arrpush(proc.args, arg);
 
 		hparser_next(ctx);
 		if (ctx->parser.tok.type == htok_comma) {
@@ -105,9 +99,10 @@ static void hparser_fn_stmt(hcc_ctx_t *ctx) {
 		hparser_expect_next(ctx, htok_ident);
 		hlex_token_t ret_type = ctx->parser.tok;
 
-		printf("retarg {\n");
-		hlex_token_dump(ret_type);
-		printf("}\n");
+		harg_t arg ={
+			.name = hsv_make_owned((u8*)"", 0),
+		};
+		stbds_arrpush(proc.rets, arg);
 	}
 
 	// has body

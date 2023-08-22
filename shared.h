@@ -6,6 +6,7 @@
 #include <assert.h>
 #include <stdnoreturn.h>
 #include <string.h>
+#include <stdlib.h>
 
 typedef uint8_t u8;
 typedef uint16_t u16;
@@ -15,6 +16,8 @@ typedef int8_t i8;
 typedef int16_t i16;
 typedef int32_t i32;
 typedef int64_t i64;
+
+typedef const char *owned_string;
 
 #ifdef NDEBUG
 	#define assert_not_reached()  __builtin_unreachable()
@@ -31,4 +34,15 @@ static MAYBE_UNUSED bool hsv_memcmp(u8 *a, size_t alen, u8 *b, size_t blen) {
         return false;
     }
     return memcmp(a, b, alen) == 0;
+}
+
+static MAYBE_UNUSED owned_string hsv_make_owned(u8 *a, size_t alen) {
+	char *p;
+
+	assert((p = malloc(alen + 1)));
+
+	memcpy(p, a, alen);
+	p[alen] = 0;
+
+	return p;
 }
