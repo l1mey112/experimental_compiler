@@ -63,7 +63,7 @@ static void hparser_fn_asm_body(hcc_ctx_t *ctx, hproc_t *proc) {
 }
 
 // WARNING: will call next
-static htype_t hparser_parse_type(hcc_ctx_t *ctx) {
+static htype_t hparser_next_parse_type(hcc_ctx_t *ctx) {
 	htoken_t tok = ctx->parser.tok;
 
 	if (hlex_is_eof(&ctx->parser.lex_c)) {
@@ -75,9 +75,24 @@ static htype_t hparser_parse_type(hcc_ctx_t *ctx) {
 
 	switch (ctx->parser.tok.type) {		
 		case HTOK_MUL:
-			return htable_type_inc_muls(ctx, hparser_parse_type(ctx));
+			return htable_type_inc_muls(ctx, hparser_next_parse_type(ctx));
 		case HTOK_QUESTION:
-			return htable_type_option_of(ctx, hparser_parse_type(ctx));
+			return htable_type_option_of(ctx, hparser_next_parse_type(ctx));
+		case HTOK_IDENT:
+			return htable_type_get(ctx, tok);
+		default:
+			hcc_err_with_pos(ctx, ctx->parser.tok, "unexpected token `%s` inside type", htok_name(ctx->parser.tok.type));
+	}
+}
+
+static htype_t hparser_parse_type(hcc_ctx_t *ctx) {
+	htoken_t tok = ctx->parser.tok;
+
+	switch (ctx->parser.tok.type) {		
+		case HTOK_MUL:
+			return htable_type_inc_muls(ctx, hparser_next_parse_type(ctx));
+		case HTOK_QUESTION:
+			return htable_type_option_of(ctx, hparser_next_parse_type(ctx));
 		case HTOK_IDENT:
 			return htable_type_get(ctx, tok);
 		default:
@@ -116,7 +131,7 @@ static void hparser_fn_stmt(hcc_ctx_t *ctx) {
 		htoken_t arg_name = ctx->parser.tok;
 		hparser_expect_next(ctx, HTOK_COLON);
 
-		htype_t type = hparser_parse_type(ctx);
+		htype_t type = hparser_next_parse_type(ctx);
 
 		assert(scratch_buf_len < ARRAYSIZE(scratch_buf_args));
 		scratch_buf_args[scratch_buf_len] = arg_name;
@@ -140,13 +155,36 @@ static void hparser_fn_stmt(hcc_ctx_t *ctx) {
 	if (hparser_next_if_not_eof(ctx) && ctx->parser.tok.type == HTOK_COLON) {
 		int scratch_buf_len_start = scratch_buf_len;
 
-		htype_t type = hparser_parse_type(ctx);
+		if (hlex_is_eof(&ctx->parser.lex_c)) {
+			hcc_err_with_pos(ctx, ctx->parser.tok, "unexpected EOF while parsing type");
+		}
+		hparser_next(ctx); // safe to call next()
 
-		// TODO: multireturn
-		assert(scratch_buf_len < ARRAYSIZE(scratch_buf_args));
-		scratch_buf_types[scratch_buf_len] = type;
-		scratch_buf_len++;
+		if (ctx->parser.tok.type == HTOK_OPAR) {
+			if (hlex_is_eof(&ctx->parser.lex_c)) {
+				hcc_err_with_pos(ctx, ctx->parser.tok, "unexpected EOF while parsing type");
+			}
+			hparser_next(ctx); // safe to call next()
+			while (ctx->parser.tok.type != HTOK_CPAR) {
+				htype_t type = hparser_parse_type(ctx);
 
+				assert(scratch_buf_len < ARRAYSIZE(scratch_buf_args));
+				scratch_buf_types[scratch_buf_len] = type;
+				scratch_buf_len++;
+
+				hparser_next(ctx);
+				if (ctx->parser.tok.type == HTOK_COMMA) {
+					hparser_next(ctx);
+				}
+			}
+		} else {
+			htype_t type = hparser_next_parse_type(ctx);
+
+			assert(scratch_buf_len < ARRAYSIZE(scratch_buf_args));
+			scratch_buf_types[scratch_buf_len] = type;
+			scratch_buf_len++;
+		}
+		
 		fn_type.d_fn.rets = scratch_buf_types + scratch_buf_len_start;
 		fn_type.d_fn.rets_len = scratch_buf_len - scratch_buf_len_start;
 	}

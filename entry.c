@@ -9,7 +9,7 @@
 int main(void) {
 	hcc_ctx_t ctx = {};
 
-	const char *work = "extern fn test(a: i32, b: T): ?T {}";
+	const char *work = "extern fn test(a: i32, b: ?T): (*T, *i8) {}";
 
 	printf("%s\n", work);
 	hparser_init(&ctx, (u8 *)work, strlen(work));
