@@ -15,16 +15,19 @@ struct hcc_ctx_t {
 	jmp_buf err_buf;
 	char err_msg[256];
 
-	// struct {
-		// hcfg_node_t *node_arena;
-		// hast_node_t *ast_arena;
-	// } arena;
-	hproc_t *current_proc;
+	struct {
+		hcfg_node_t *cfg_arena;
+		hast_node_t *ast_arena;
+	} arena;
+	hproc_t *current_proc; // should be moved into parser? maybe not?
 	hproc_t *procs;
 	htypeinfo_t *type_table;
 	//
 
 };
+// current_proc
+//   this may be a use after free!
+//   or maybe not, as `current_proc` is only valid for the length of the parsing
 
 noreturn void hcc_err(hcc_ctx_t *ctx, const char *fmt, ...);
 noreturn void hcc_err_with_pos(hcc_ctx_t *ctx, htoken_t tok, const char *fmt, ...);

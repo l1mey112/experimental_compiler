@@ -41,11 +41,114 @@ static void hparser_expect_next(hcc_ctx_t *ctx, htok_t expected) {
 	}
 }
 
-static void hparser_fn_body_stmt(hcc_ctx_t *ctx, hproc_t *proc) {
-	
+static inline hcfg_node_t *hparser_cfg_node(hcc_ctx_t *ctx, u32 node) {
+	assert(node != -1);
+	assert(node < stbds_arrlenu(ctx->arena.cfg_arena)); // TODO: reasonably safe? remove this?
+	return &ctx->arena.cfg_arena[node];
 }
 
-static void hparser_fn_body(hcc_ctx_t *ctx, hproc_t *proc) {
+static inline hast_node_t *hparser_ast_node(hcc_ctx_t *ctx, u32 node) {
+	assert(node != -1);
+	assert(node < stbds_arrlenu(ctx->arena.ast_arena)); // TODO: reasonably safe? remove this?
+	return &ctx->arena.ast_arena[node];
+}
+
+static u32 hparser_new_cfg_node(hcc_ctx_t *ctx) {
+	u32 nidx = stbds_arrlenu(ctx->arena.cfg_arena);
+	hcfg_node_t node;
+	node.nidx = nidx;
+	node.node_false = -1;
+	node.node_true = -1;
+	node.ast_begin = -1;
+	node.ast_cond = -1;
+	stbds_arrpush(ctx->arena.cfg_arena, node);
+	return nidx;
+}
+
+static u32 hparser_new_ast_node(hcc_ctx_t *ctx, hast_type_t type) {
+	u32 nidx = stbds_arrlenu(ctx->arena.cfg_arena);
+	hast_node_t node = {
+		.type = type,
+		.children = {-1, -1, -1},
+		.next = -1,
+	};
+	stbds_arrpush(ctx->arena.ast_arena, node);
+	return nidx;
+}
+
+// returns `-1` on error
+static u32 hparser_search_scope(hcc_ctx_t *ctx, htoken_t token) {
+	assert(ctx->parser.scope_spans_len > 0);
+	u32 scope_idx = stbds_arrlenu(ctx->parser.scope_spans) - 1;
+
+	size_t hash = hsv_name_hash(token.p, token.len);
+
+	for (u32 p = ctx->parser.scope_spans_len; p > 0;) {
+		p--;
+		// no variable shadowing within same scope
+		u32 start = ctx->parser.scope_spans[p].start;
+		u32 end = ctx->parser.scope_spans[p].end;
+		for (u32 i = start; i < end; i++) {
+			if (ctx->current_proc->locals[i].name_hash == hash) {
+				return i;
+			}
+		}
+	}
+
+	return -1;
+}
+
+static void hparser_push_scope(hcc_ctx_t *ctx) {
+	if (ctx->parser.scope_spans_len >= ARRAYSIZE(ctx->parser.scope_spans)) {
+		hcc_err(ctx, "indentations higher than 128? what is wrong with you?");
+	}
+	u32 start = stbds_arrlenu(ctx->current_proc);
+	ctx->parser.scope_spans[ctx->parser.scope_spans_len].start = start;
+	ctx->parser.scope_spans[ctx->parser.scope_spans_len].end = start;
+	ctx->parser.scope_spans_len++;
+}
+
+static u8 hparser_tok_precedence(htok_t type) {
+	return 0;
+}
+
+static u32 hparser_expr(hcc_ctx_t *ctx, u8 prec) {
+	u32 node;
+	hast_node_t *n;
+
+	switch (ctx->parser.tok.type) {
+		case HTOK_IDENT: {
+			node = hparser_new_ast_node(ctx, HAST_EXPR_IDENT);
+			n = hparser_ast_node(ctx, node);
+			u32 idx = hparser_search_scope(ctx, ctx->parser.tok);
+			n->d_ident.is_local = idx != -1;
+			n->d_ident.idx = idx; // -1 on not found
+		}
+		default: {
+			assert_not_reached();
+		}
+	}
+
+	while (prec < hparser_tok_precedence(ctx->parser.tok.type)) {
+		// blah
+	}
+
+	return node;
+}
+
+static u32 hparser_fn_body_stmt(hcc_ctx_t *ctx) {
+	switch (ctx->parser.tok.type) {
+		default: {
+			u32 node = hparser_new_ast_node(ctx, HAST_STMT_EXPR);
+			hast_node_t *n = hparser_ast_node(ctx, node);
+			n->children[0] = hparser_expr(ctx, 0);
+		}
+	}
+
+	assert_not_reached();
+}
+
+static void hparser_fn_body(hcc_ctx_t *ctx) {
 	while (true) {
 		htoken_t ltoken = ctx->parser.tok;
 		if (!hparser_next_if_not_eof(ctx)) {
@@ -54,7 +157,7 @@ static void hparser_fn_body(hcc_ctx_t *ctx, hproc_t *proc) {
 		if (ctx->parser.tok.type == HTOK_CBRACE) {
 			return;
 		}
-		hparser_fn_body_stmt(ctx, proc);
+		hparser_fn_body_stmt(ctx);
 	}
 }
 
@@ -100,38 +203,6 @@ static htype_t hparser_parse_type(hcc_ctx_t *ctx) {
 	}
 }
 
-// returns `-1` on error
-static u32 hparser_search_scope(hcc_ctx_t *ctx, htoken_t token) {
-	assert(ctx->parser.scope_spans_len > 0);
-	u32 scope_idx = stbds_arrlenu(ctx->parser.scope_spans) - 1;
-
-	size_t hash = hsv_name_hash(token.p, token.len);
-
-	for (u32 p = ctx->parser.scope_spans_len; p > 0;) {
-		p--;
-		// no variable shadowing within same scope
-		u32 start = ctx->parser.scope_spans[p].start;
-		u32 end = ctx->parser.scope_spans[p].end;
-		for (u32 i = start; i < end; i++) {
-			if (ctx->current_proc->locals[i].name_hash == hash) {
-				return i;
-			}
-		}
-	}
-
-	return -1;
-}
-
-static void hparser_push_scope(hcc_ctx_t *ctx) {
-	if (ctx->parser.scope_spans_len >= ARRAYSIZE(ctx->parser.scope_spans)) {
-		hcc_err(ctx, "indentations higher than 128? what is wrong with you?");
-	}
-	u32 start = stbds_arrlenu(ctx->current_proc);
-	ctx->parser.scope_spans[ctx->parser.scope_spans_len].start = start;
-	ctx->parser.scope_spans[ctx->parser.scope_spans_len].end = start;
-	ctx->parser.scope_spans_len++;
-}
-
 static void hparser_pop_scope(hcc_ctx_t *ctx) {
 	assert(ctx->parser.scope_spans_len > 0);
 	ctx->parser.scope_spans_len--;
@@ -150,6 +221,7 @@ static void hparser_fn_stmt(hcc_ctx_t *ctx) {
 
 	hparser_expect_next(ctx, HTOK_IDENT);
 	htoken_t fn_name = ctx->parser.tok;
+	proc.fn_name = fn_name;
 	hparser_expect_next(ctx, HTOK_OPAR);
 	hparser_next(ctx);
 
@@ -244,6 +316,7 @@ static void hparser_fn_stmt(hcc_ctx_t *ctx) {
 	stbds_arrpush(ctx->procs, proc);
 	ctx->current_proc = &ctx->procs[procs_len];
 
+	ctx->current_proc->cfg_begin = -1;
 	// has body
 	if (hparser_next_if_not_eof(ctx)) {
 		assert(ctx->parser.scope_spans_len == 0);
@@ -252,7 +325,8 @@ static void hparser_fn_stmt(hcc_ctx_t *ctx) {
 
 		if (ctx->parser.tok.type == HTOK_OBRACE) {
 			// body
-			hparser_fn_body(ctx, &proc);
+			ctx->parser.cfg_c = hparser_new_cfg_node(ctx);
+			hparser_fn_body(ctx);
 		} else if (ctx->parser.tok.type == HTOK_ASM) {
 			// asm body
 			hparser_fn_asm_body(ctx, &proc);

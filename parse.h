@@ -8,6 +8,7 @@ struct hparser_t {
 	hlex_t lex_c;
 	htoken_t tok;
 	//
+	u32 cfg_c;
 	struct {
 		u32 start;
 		u32 end;
