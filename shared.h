@@ -7,6 +7,7 @@
 #include <stdnoreturn.h>
 #include <string.h>
 #include <stdlib.h>
+#include "stb_ds.h"
 
 typedef uint8_t u8;
 typedef uint16_t u16;
@@ -55,4 +56,8 @@ static MAYBE_UNUSED owned_string hsv_make_owned(u8 *a, size_t alen) {
 	p[alen] = 0;
 
 	return p;
+}
+
+static MAYBE_UNUSED size_t hsv_name_hash(u8 *a, size_t len) {
+	return stbds_hash_bytes(a, len, 99999);
 }

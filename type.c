@@ -84,7 +84,7 @@ htype_t htable_type_get(hcc_ctx_t *ctx, htoken_t token) {
 		// unknown type, create a new one
 		htypeinfo_t typeinfo = {
 			.type = HT_UNKNOWN,
-			.d_unknown.name_hash = stbds_hash_bytes(token.p, token.len, 99999),
+			.d_unknown.name_hash = hsv_name_hash(token.p, token.len),
 			.d_unknown.token = token,
 		};
 		type = htable_intern_append(ctx, typeinfo);

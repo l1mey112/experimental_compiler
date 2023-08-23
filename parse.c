@@ -42,7 +42,7 @@ static void hparser_expect_next(hcc_ctx_t *ctx, htok_t expected) {
 }
 
 static void hparser_fn_body_stmt(hcc_ctx_t *ctx, hproc_t *proc) {
-
+	
 }
 
 static void hparser_fn_body(hcc_ctx_t *ctx, hproc_t *proc) {
@@ -100,6 +100,43 @@ static htype_t hparser_parse_type(hcc_ctx_t *ctx) {
 	}
 }
 
+// returns `-1` on error
+static u32 hparser_search_scope(hcc_ctx_t *ctx, htoken_t token) {
+	assert(ctx->parser.scope_spans_len > 0);
+	u32 scope_idx = stbds_arrlenu(ctx->parser.scope_spans) - 1;
+
+	size_t hash = hsv_name_hash(token.p, token.len);
+
+	for (u32 p = ctx->parser.scope_spans_len; p > 0;) {
+		p--;
+		// no variable shadowing within same scope
+		u32 start = ctx->parser.scope_spans[p].start;
+		u32 end = ctx->parser.scope_spans[p].end;
+		for (u32 i = start; i < end; i++) {
+			if (ctx->current_proc->locals[i].name_hash == hash) {
+				return i;
+			}
+		}
+	}
+
+	return -1;
+}
+
+static void hparser_push_scope(hcc_ctx_t *ctx) {
+	if (ctx->parser.scope_spans_len >= ARRAYSIZE(ctx->parser.scope_spans)) {
+		hcc_err(ctx, "indentations higher than 128? what is wrong with you?");
+	}
+	u32 start = stbds_arrlenu(ctx->current_proc);
+	ctx->parser.scope_spans[ctx->parser.scope_spans_len].start = start;
+	ctx->parser.scope_spans[ctx->parser.scope_spans_len].end = start;
+	ctx->parser.scope_spans_len++;
+}
+
+static void hparser_pop_scope(hcc_ctx_t *ctx) {
+	assert(ctx->parser.scope_spans_len > 0);
+	ctx->parser.scope_spans_len--;
+}
+
 static void hparser_fn_stmt(hcc_ctx_t *ctx) {
 	hproc_t proc = {};
 	htypeinfo_t fn_type;
@@ -119,7 +156,7 @@ static void hparser_fn_stmt(hcc_ctx_t *ctx) {
 	// NOTE: you are using a scratch buffer, this is fucking unsafe!
 	//       make your prayers that the type function still clones
 
-	int scratch_buf_len = 0;
+	u32 scratch_buf_len = 0;
 	static htoken_t scratch_buf_args[128];
 	static htype_t scratch_buf_types[128];
 
@@ -144,8 +181,7 @@ static void hparser_fn_stmt(hcc_ctx_t *ctx) {
 		}
 	}
 
-	// TODO: scratch_buf_args, remember names..
-
+	u32 scratch_buf_args_len = scratch_buf_len;
 	fn_type.type = HT_FN;
 	fn_type.d_fn.args = scratch_buf_types;
 	fn_type.d_fn.args_len = scratch_buf_len;
@@ -153,7 +189,7 @@ static void hparser_fn_stmt(hcc_ctx_t *ctx) {
 	fn_type.d_fn.rets_len = 0;
 
 	if (hparser_next_if_not_eof(ctx) && ctx->parser.tok.type == HTOK_COLON) {
-		int scratch_buf_len_start = scratch_buf_len;
+		u32 scratch_buf_len_start = scratch_buf_len;
 
 		if (hlex_is_eof(&ctx->parser.lex_c)) {
 			hcc_err_with_pos(ctx, ctx->parser.tok, "unexpected EOF while parsing type");
@@ -192,8 +228,28 @@ static void hparser_fn_stmt(hcc_ctx_t *ctx) {
 	proc.fn_type = htable_intern_append(ctx, fn_type);
 	htable_type_dump(ctx, proc.fn_type);
 
+	for (u32 i = 0; i < scratch_buf_args_len; i++) {
+		htoken_t token = scratch_buf_args[i];
+		htype_t type = scratch_buf_types[i];
+		hast_ident_t ident = {
+			.is_arg = true,
+			.name_hash = hsv_name_hash(token.p, token.len),
+			.token = token,
+			.type = type,
+		};
+		stbds_arrpush(proc.locals, ident);
+	}
+
+	u32 procs_len = stbds_arrlenu(ctx->procs);
+	stbds_arrpush(ctx->procs, proc);
+	ctx->current_proc = &ctx->procs[procs_len];
+
 	// has body
 	if (hparser_next_if_not_eof(ctx)) {
+		assert(ctx->parser.scope_spans_len == 0);
+		hparser_push_scope(ctx);
+		ctx->parser.scope_spans[0].end = scratch_buf_args_len;
+
 		if (ctx->parser.tok.type == HTOK_OBRACE) {
 			// body
 			hparser_fn_body(ctx, &proc);
@@ -203,6 +259,8 @@ static void hparser_fn_stmt(hcc_ctx_t *ctx) {
 		} else {
 			hcc_err_with_pos(ctx, ctx->parser.tok, "unexpected `%s`, expected `{` or `;`", htok_name(ctx->parser.tok.type));
 		}
+
+		hparser_pop_scope(ctx);
 	}
 }
 
@@ -221,8 +279,6 @@ static void hparser_top_stmt(hcc_ctx_t *ctx) {
 }
 
 void hparser_run(hcc_ctx_t *ctx) {
-
-
 	while(!hlex_is_eof(&ctx->parser.lex_c)) {
 		hparser_next(ctx);
 		hparser_top_stmt(ctx);

@@ -7,6 +7,12 @@ typedef struct hparser_t hparser_t;
 struct hparser_t {
 	hlex_t lex_c;
 	htoken_t tok;
+	//
+	struct {
+		u32 start;
+		u32 end;
+	} scope_spans[128];
+	u32 scope_spans_len;
 };
 
 typedef struct hcc_ctx_t hcc_ctx_t; // forward declaration
