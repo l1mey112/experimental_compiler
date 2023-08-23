@@ -12,12 +12,8 @@ int main(void) {
 
 	const char *work =
 	"extern fn test(a: i32, b: ?T): (*T, *i8) {\n"
-	"    a + 1\n"
+	"   \n"
 	"}";
-
-	/* "extern fn test(a: i32, b: ?T): (*T, *i8) {
-		20 + -2455 + 2 - 1\n
-	}"; */
 
 	printf("%s\n", work);
 	hparser_init(&ctx, (u8 *)work, strlen(work));

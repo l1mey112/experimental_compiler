@@ -411,6 +411,12 @@ static void hparser_fn_stmt(hcc_ctx_t *ctx) {
 
 		htype_t type = hparser_next_parse_type(ctx);
 
+		for (u32 i = 0; i < scratch_buf_len; i++) {
+			if (hsv_memcmp(arg_name.p, arg_name.len, scratch_buf_args[i].p, scratch_buf_args[i].len)) {
+				hcc_err_with_pos(ctx, arg_name, "duplicate function parameter name");
+			}
+		}
+
 		assert(scratch_buf_len < ARRAYSIZE(scratch_buf_args));
 		scratch_buf_args[scratch_buf_len] = arg_name;
 		scratch_buf_types[scratch_buf_len] = type;
@@ -524,7 +530,7 @@ static void hparser_top_stmt(hcc_ctx_t *ctx) {
 
 void hparser_run(hcc_ctx_t *ctx) {
 	while(!hlex_is_eof(&ctx->parser.lex_c)) {
-		hparser_next(ctx);
+		hparser_next(ctx); // TODO: what about whitespace at the EOF??? argh..
 		hparser_top_stmt(ctx);
 	}
 }
