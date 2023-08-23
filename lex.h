@@ -21,12 +21,11 @@ struct hlex_t {
 	u8 *pend;
 	u8 *plast_nl;
 	u32 line_nr;
-	jmp_buf lex_err;
-	char last_err_msg[128];
 };
 
 enum htok_t {
 	HTOK_UNKNOWN, // no token
+	HTOK_EOF,     // no token
     #define X(name, _) name,
     #include "tok.def"
     #undef X

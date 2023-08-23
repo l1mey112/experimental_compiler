@@ -4,22 +4,24 @@
 #include "hasc.h"
 #include "ir.h"
 #include "lex.h"
+#include "parse.h"
 #include "stb_ds.h"
 #include "type.h"
 
 int main(void) {
+	hparser_t parser = {};
 	hcc_ctx_t ctx = {};
 
 	const char *work =
-	"extern fn test(a: i32, b: ?T): (*T, *i8) {\n"
-	"   \n"
-	"}";
+		"extern fn test(a: i32, b: ?T): (*T, *i8) {\n"
+		"    \n"
+		"}";
 
 	printf("%s\n", work);
-	hparser_init(&ctx, (u8 *)work, strlen(work));
+	hparser_init(&ctx, &parser, (u8 *)work, strlen(work));
 
 	if (setjmp(ctx.err_buf) == 0) {
-		hparser_run(&ctx);
+		hparser_run(&ctx, &parser);
 		printf("passed!\n");
 	} else {
 		puts(ctx.err_msg);

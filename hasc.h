@@ -11,7 +11,6 @@
 typedef struct hcc_ctx_t hcc_ctx_t;
 
 struct hcc_ctx_t {
-	hparser_t parser; // TODO: retire hparser_t, maybe inline it in a struct here?
 	jmp_buf err_buf;
 	char err_msg[256];
 

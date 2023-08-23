@@ -18,5 +18,5 @@ struct hparser_t {
 
 typedef struct hcc_ctx_t hcc_ctx_t; // forward declaration
 
-void hparser_init(hcc_ctx_t *ctx, u8 *pc, size_t plen);
-void hparser_run(hcc_ctx_t *ctx);
+void hparser_init(hcc_ctx_t *ctx, hparser_t *parser, u8 *pc, size_t plen);
+void hparser_run(hcc_ctx_t *ctx, hparser_t *parser);
