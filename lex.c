@@ -104,6 +104,10 @@ htoken_t hlex_next(hlex_t *lex, hcc_ctx_t *ctx) {
 						tok = HTOK_INC;
 						lex->pc++;
 						len = 2;
+					} else if (ch1 == '=') {
+						tok = HTOK_ASSIGN_ADD;
+						lex->pc++;
+						len = 2;
 					} else {
 						tok = HTOK_ADD;
 					}
@@ -113,18 +117,40 @@ htoken_t hlex_next(hlex_t *lex, hcc_ctx_t *ctx) {
 						tok = HTOK_DEC;
 						lex->pc++;
 						len = 2;
+					} else if (ch1 == '=') {
+						tok = HTOK_ASSIGN_SUB;
+						lex->pc++;
+						len = 2;
 					} else {
 						tok = HTOK_SUB;
 					}
 					break;
 				case '*':
-					tok = HTOK_MUL;
+					if (ch1 == '=') {
+						tok = HTOK_ASSIGN_MUL;
+						lex->pc++;
+						len = 2;
+					} else {
+						tok = HTOK_MUL;
+					}
 					break;
 				case '/':
-					tok = HTOK_DIV;
+					if (ch1 == '=') {
+						tok = HTOK_ASSIGN_DIV;
+						lex->pc++;
+						len = 2;
+					} else {
+						tok = HTOK_DIV;
+					}
 					break;
 				case '%':
-					tok = HTOK_MOD;
+					if (ch1 == '=') {
+						tok = HTOK_ASSIGN_MOD;
+						lex->pc++;
+						len = 2;
+					} else {
+						tok = HTOK_MOD;
+					}
 					break;
 				case '=':
 					if (ch1 == '=') {
@@ -148,6 +174,10 @@ htoken_t hlex_next(hlex_t *lex, hcc_ctx_t *ctx) {
 						tok = HTOK_LSHIFT;
 						len = 2;
 						lex->pc++;
+					} else if (ch1 == '=') {
+						tok = HTOK_LE;
+						len = 2;
+						lex->pc++;
 					} else {
 						tok = HTOK_LT;
 					}
@@ -159,10 +189,14 @@ htoken_t hlex_next(hlex_t *lex, hcc_ctx_t *ctx) {
 							len = 3;
 							lex->pc += 2;
 						} else {
-							len = 2;
 							tok = HTOK_RSHIFT;
+							len = 2;
 							lex->pc++;
 						}
+					} else if (ch1 == '=') {
+						tok = HTOK_GE;
+						len = 2;
+						lex->pc++;
 					} else {
 						tok = HTOK_GT;
 					}

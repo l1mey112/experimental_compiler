@@ -29,3 +29,31 @@ void hcc_err(hcc_ctx_t *ctx, const char *fmt, ...) {
 	va_end(args);
 	longjmp(ctx->err_buf, 1);
 }
+
+hcfg_node_t *hcc_cfg_node(hcc_ctx_t *ctx, u32 node) {
+	assert(node != (u32)-1);
+	assert(node < stbds_arrlenu(ctx->arena.cfg_arena)); // TODO: reasonably safe? remove this?
+	return &ctx->arena.cfg_arena[node];
+}
+
+hast_node_t *hcc_ast_node(hcc_ctx_t *ctx, u32 node) {
+	assert(node != (u32)-1);
+	assert(node < stbds_arrlenu(ctx->arena.ast_arena)); // TODO: reasonably safe? remove this?
+	return &ctx->arena.ast_arena[node];
+}
+
+hcfg_node_t *hcc_cfg_node_opt(hcc_ctx_t *ctx, u32 node) {
+	if (node == (u32)-1) {
+		return NULL;
+	}
+	assert(node < stbds_arrlenu(ctx->arena.cfg_arena)); // TODO: reasonably safe? remove this?
+	return &ctx->arena.cfg_arena[node];
+}
+
+hast_node_t *hcc_ast_node_opt(hcc_ctx_t *ctx, u32 node) {
+	if (node == (u32)-1) {
+		return NULL;
+	}
+	assert(node < stbds_arrlenu(ctx->arena.ast_arena)); // TODO: reasonably safe? remove this?
+	return &ctx->arena.ast_arena[node];
+}

@@ -26,6 +26,7 @@ struct hlex_t {
 };
 
 enum htok_t {
+	HTOK_UNKNOWN, // no token
     #define X(name, _) name,
     #include "tok.def"
     #undef X
@@ -38,3 +39,35 @@ struct htoken_t {
 	u32 len;
 	u8 *p;
 };
+
+#define HTOK_IS_PREFIX(t) \
+	(t) == HTOK_SUB || (t) == HTOK_NOT || (t) == HTOK_TILDE || (t) == HTOK_MUL || (t) == HTOK_BAND
+
+#define HTOK_IS_INFIX(t) \
+	(t) == HTOK_ADD || \
+	(t) == HTOK_SUB || \
+	(t) == HTOK_MUL || \
+	(t) == HTOK_DIV || \
+	(t) == HTOK_MOD || \
+	(t) == HTOK_ASSIGN || \
+	(t) == HTOK_ASSIGN_ADD || \
+	(t) == HTOK_ASSIGN_SUB || \
+	(t) == HTOK_ASSIGN_MUL || \
+	(t) == HTOK_ASSIGN_DIV || \
+	(t) == HTOK_ASSIGN_MOD || \
+	(t) == HTOK_EQ || \
+	(t) == HTOK_NEQ || \
+	(t) == HTOK_LT || \
+	(t) == HTOK_GT || \
+	(t) == HTOK_LE || \
+	(t) == HTOK_GE || \
+	(t) == HTOK_AND || \
+	(t) == HTOK_OR || \
+	(t) == HTOK_BAND || \
+	(t) == HTOK_BOR || \
+	(t) == HTOK_XOR || \
+	(t) == HTOK_LSHIFT || \
+	(t) == HTOK_RSHIFT || \
+	(t) == HTOK_RUSHIFT || \
+	(t) == HTOK_DOT || \
+	(t) == HTOK_AS

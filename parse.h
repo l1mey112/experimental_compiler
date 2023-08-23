@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ir.h"
 #include "lex.h"
 
 typedef struct hparser_t hparser_t;
@@ -8,7 +9,6 @@ struct hparser_t {
 	hlex_t lex_c;
 	htoken_t tok;
 	//
-	u32 cfg_c;
 	struct {
 		u32 start;
 		u32 end;
