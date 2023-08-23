@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <errno.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "ir.h"
 #include "parse.h"
@@ -76,10 +77,16 @@ static u32 hparser_new_ast_node(hcc_ctx_t *ctx, hast_type_t type) {
 static u32 hcc_ast_node_from_literal(hcc_ctx_t *ctx, htoken_t literal, bool negate) {
 	assert(literal.type == HTOK_INTEGER); // TODO: float values...
 
-	u32 node = hparser_new_ast_node(ctx, HAST_EXPR_IDENT);
+	static char scratch_buf[128];
+	assert(literal.len < 127 && "TODO: you shouldn't be doing this, but l-m needs to create a strtol function that works with SVs");
+
+	memcpy(scratch_buf, literal.p, literal.len);
+	scratch_buf[literal.len] = '\0';
+
+	u32 node = hparser_new_ast_node(ctx, HAST_EXPR_LITERAL_INT);
 	hast_node_t *nodep = hcc_ast_node(ctx, node);
 
-	nodep->d_literal_int.value = strtol((const char *)literal.p, NULL, 10);
+	nodep->d_literal_int.value = strtol(scratch_buf, NULL, 10);
 	nodep->token = literal;
 
 	if (errno == ERANGE) {
@@ -262,8 +269,8 @@ static u32 hparser_expr_next(hcc_ctx_t *ctx, u8 prec) {
 					u32 expr = hparser_new_ast_node(ctx, HAST_EXPR_INFIX);
 					n = hcc_ast_node(ctx, expr);
 					n->token = token;
-					n->children[0] = rhs;
-					n->children[1] = lhs;
+					n->children[0] = lhs;
+					n->children[1] = rhs;
 
 					node = expr;
 				} else {

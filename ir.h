@@ -28,7 +28,8 @@ struct hcfg_node_t {
 	u32 node_false;
 };
 
-// TODO: why have `children[3]` when `next` is available?
+// `next` for linked list of stuffs
+// comma EXPR
 struct hast_node_t {
 	hast_type_t type;
 	htoken_t token;
