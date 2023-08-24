@@ -8,13 +8,15 @@
 #include "stb_ds.h"
 #include "type.h"
 
+const char* __asan_default_options() { return "detect_leaks=0"; }
+
 int main(void) {
 	hparser_t parser = {};
 	hcc_ctx_t ctx = {};
 
 	const char *work =
 		"extern fn test(a: i32, b: ?T): (*T, *i8) {\n"
-		"    -(10 + 2)\n"
+		"    -(10 + 2) + a\n"
 		"}";
 
 	printf("%s\n", work);

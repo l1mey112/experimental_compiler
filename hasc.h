@@ -28,7 +28,8 @@ struct hcc_ctx_t {
 //   or maybe not, as `current_proc` is only valid for the length of the parsing
 
 noreturn void hcc_err(hcc_ctx_t *ctx, const char *fmt, ...);
-noreturn void hcc_err_with_pos(hcc_ctx_t *ctx, htoken_t tok, const char *fmt, ...);
+noreturn void hcc_err_with_pos(hcc_ctx_t *ctx, htoken_t tok, const char *fmt, ...)
+	__attribute__((format(printf, 3, 4)));
 
 hcfg_node_t *hcc_cfg_node(hcc_ctx_t *ctx, u32 node);
 hast_node_t *hcc_ast_node(hcc_ctx_t *ctx, u32 node);

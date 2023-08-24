@@ -1,5 +1,5 @@
 CC := gcc
-CFLAGS := -Wall -Wextra -MMD -std=gnu11 -D_FORTIFY_SOURCE=2
+CFLAGS := -Wall -Wextra -MMD -std=gnu11 -fsanitize=address
 DEBUG_FLAGS := -g
 PROD_FLAGS := -O2
 

@@ -260,7 +260,7 @@ static u32 hparser_expr_next(hcc_ctx_t *ctx, hparser_t *parser, u8 prec) {
 		case HTOK_OPAR: {
 			hparser_next(ctx, parser);
 			node = hparser_expr_next(ctx, parser, 0);
-			hparser_expect(ctx, parser, HTOK_CPAR);
+			hparser_check(ctx, parser, HTOK_CPAR);
 			hparser_next(ctx, parser);
 			break;
 		}
@@ -286,11 +286,14 @@ static u32 hparser_expr_next(hcc_ctx_t *ctx, hparser_t *parser, u8 prec) {
 					n->children[0] = next;
 				}
 			} else {
+				assert(parser->tok.type == HTOK_EOF);
 				hcc_err_with_pos(ctx, parser->tok, "unexpected `%s` in prefix position", htok_name(t));
 			}
 			break;
 		}
 	}
+
+	// -(a)
 
 	// 1: move the lexer along into either the next token state, or an EOF
 	if (hparser_is_eof(parser)) {
@@ -334,6 +337,8 @@ exit:
 static u32 hparser_fn_body_stmt_next(hcc_ctx_t *ctx, hparser_t *parser) {
 	switch (parser->tok.type) {
 		default: {
+			htoken_dump(parser->tok);
+
 			u32 node = hparser_new_ast_node(ctx, parser, HAST_STMT_EXPR);
 			u32 next = hparser_expr_next(ctx, parser, 0);
 			hast_node_t *n = hcc_ast_node(ctx, node);
@@ -356,7 +361,7 @@ static void hparser_body(hcc_ctx_t *ctx, hparser_t *parser, u32 cfg_node) {
 
 	while (true) {
 		if (parser->tok.type == HTOK_CBRACE) {
-			return;
+			break;
 		}
 
 		u32 node = hparser_fn_body_stmt_next(ctx, parser);
@@ -373,6 +378,9 @@ static void hparser_body(hcc_ctx_t *ctx, hparser_t *parser, u32 cfg_node) {
 
 		current_ast = node;
 	}
+	// }
+	// ^
+	hparser_next(ctx, parser);
 }
 
 static void hparser_fn_asm_body(hcc_ctx_t *ctx, hparser_t *parser, hproc_t *proc) {
@@ -397,7 +405,7 @@ static htype_t hparser_parse_type(hcc_ctx_t *ctx, hparser_t *parser) {
 			type = htable_type_get(ctx, tok);
 			break;
 		case HTOK_EOF:
-			hcc_err_with_pos(ctx, parser->tok, "unexpected EOF inside type", htok_name(parser->tok.type));
+			hcc_err_with_pos(ctx, parser->tok, "unexpected EOF inside type");
 		default:
 			hcc_err_with_pos(ctx, parser->tok, "unexpected token `%s` inside type", htok_name(parser->tok.type));
 	}
@@ -419,14 +427,14 @@ static void hparser_fn_stmt(hcc_ctx_t *ctx, hparser_t *parser) {
 
 	if (parser->tok.type == HTOK_EXTERN) {
 		proc.is_extern = true;
-		hparser_expect(ctx, parser, HTOK_FN);
-	} else {
 		hparser_next(ctx, parser);
 	}
+	hparser_expect(ctx, parser, HTOK_FN);
 
-	hparser_expect(ctx, parser, HTOK_IDENT);
+	hparser_check(ctx, parser, HTOK_IDENT);
 	htoken_t fn_name = parser->tok;
 	proc.fn_name = fn_name;
+	hparser_next(ctx, parser);
 	hparser_expect(ctx, parser, HTOK_OPAR);
 
 	// NOTE: you are using a scratch buffer, this is fucking unsafe!
@@ -438,9 +446,6 @@ static void hparser_fn_stmt(hcc_ctx_t *ctx, hparser_t *parser) {
 
 	_Static_assert(ARRAYSIZE(scratch_buf_args) == ARRAYSIZE(scratch_buf_types), "uhh");
 
-
-	// TODO: fix like the bottom param parsing
-
 	// parse type list
 	while (parser->tok.type != HTOK_CPAR) {
 		hparser_check(ctx, parser, HTOK_IDENT);
@@ -449,6 +454,8 @@ static void hparser_fn_stmt(hcc_ctx_t *ctx, hparser_t *parser) {
 		hparser_expect(ctx, parser, HTOK_COLON);
 
 		htype_t type = hparser_parse_type(ctx, parser);
+		// (a: T, b: T)
+		//      ^
 
 		for (u32 i = 0; i < scratch_buf_len; i++) {
 			if (hsv_memcmp(arg_name.p, arg_name.len, scratch_buf_args[i].p, scratch_buf_args[i].len)) {
@@ -461,7 +468,6 @@ static void hparser_fn_stmt(hcc_ctx_t *ctx, hparser_t *parser) {
 		scratch_buf_types[scratch_buf_len] = type;
 		scratch_buf_len++;
 
-		hparser_next(ctx, parser);
 		if (parser->tok.type == HTOK_COMMA) {
 			hparser_next(ctx, parser);
 		}
@@ -475,6 +481,8 @@ static void hparser_fn_stmt(hcc_ctx_t *ctx, hparser_t *parser) {
 	fn_type.d_fn.rets_len = 0;
 
 
+	// (a: T, b: T): ...
+	//            ^|
 	if (parser->peek.type == HTOK_COLON) {
 		u32 scratch_buf_len_start = scratch_buf_len;
 
@@ -575,7 +583,6 @@ static void hparser_top_stmt(hcc_ctx_t *ctx, hparser_t *parser) {
 
 void hparser_run(hcc_ctx_t *ctx, hparser_t *parser) {
 	while(parser->tok.type != HTOK_EOF) {
-		hparser_next(ctx, parser); // TODO: what about whitespace at the EOF??? argh..
 		hparser_top_stmt(ctx, parser);
 	}
 }
