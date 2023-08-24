@@ -13,10 +13,6 @@ static bool is_id(u8 ch) {
     return isalpha(ch) || ch == '_' || isdigit(ch);
 }
 
-bool hparser_lex_is_eof(hparser_t *parser) {
-	return parser->lex.pc >= parser->lex.pend;
-}
-
 htoken_t hparser_lex_next(hparser_t *parser, hcc_ctx_t *ctx) {
 	while (parser->lex.pc < parser->lex.pend) {
 		u8 ch = *parser->lex.pc;
@@ -260,6 +256,8 @@ htoken_t hparser_lex_next(hparser_t *parser, hcc_ctx_t *ctx) {
 		}
 	}
 
-	assert_not_reached(); // can't call next() whilst EOF
+	static htoken_t eof = {.type = HTOK_EOF};
+
+	return eof;
 }
 

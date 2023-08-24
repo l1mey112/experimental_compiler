@@ -29,4 +29,3 @@ void hparser_run(hcc_ctx_t *ctx, hparser_t *parser);
 void hparser_next(hcc_ctx_t *ctx, hparser_t *parser);
 
 htoken_t hparser_lex_next(hparser_t *parser, hcc_ctx_t *ctx);
-bool hparser_lex_is_eof(hparser_t *parser);

@@ -21,41 +21,79 @@ void hparser_init(hcc_ctx_t *ctx, hparser_t *parser, u8 *pc, size_t plen) {
 }
 
 void hparser_next(hcc_ctx_t *ctx, hparser_t *parser) {
-	parser->peek = parser->tok;
-	parser->tok = hparser_lex_next(parser, ctx);
-	// hparser_lex_token_dump(parser->tok);
+	parser->tok = parser->peek;
+	parser->peek = hparser_lex_next(parser, ctx);
 }
 
-static bool hparser_next_if_not_eof(hcc_ctx_t *ctx, hparser_t *parser) {
-	if (hparser_lex_is_eof(parser)) {
-		return false;
+// static bool hparser_next_if_not_eof(hcc_ctx_t *ctx, hparser_t *parser) {
+// 	if (hparser_lex_is_eof(parser)) {
+// 		return false;
+// 	}
+// 	hparser_next(ctx, parser);
+// 	return true;
+// }
+// static void hparser_expect(hcc_ctx_t *ctx, hparser_t *parser, htok_t expected) {
+// 	if (parser->tok.type != expected) {
+// 		hcc_err_with_pos(ctx, parser->tok, "unexpected `%s`, expected `%s`", htok_name(parser->tok.type), htok_name(expected));
+// 	}
+// }
+// static void hparser_expect_next(hcc_ctx_t *ctx, hparser_t *parser, htok_t expected) {
+// 	if (hparser_lex_is_eof(parser)) {
+// 		hcc_err(ctx, "unexpected EOF, expected `%s`", htok_name(expected));
+// 	}
+// 	hparser_next(ctx, parser);
+// 	if (parser->tok.type != expected) {
+// 		hcc_err_with_pos(ctx, parser->tok, "unexpected `%s`, expected `%s`", htok_name(parser->tok.type), htok_name(expected));
+// 	}
+// }
+// static void hparser_expect_next_not_eof(hcc_ctx_t *ctx, hparser_t *parser) {
+// 	if (hparser_lex_is_eof(parser)) {
+// 		hcc_err(ctx, "unexpected EOF");
+// 	}
+// 	hparser_next(ctx, parser);
+// }
+
+static void hparser_check(hcc_ctx_t *ctx, hparser_t *parser, htok_t expected) {
+	if (parser->tok.type != expected) {
+		hcc_err_with_pos(ctx, parser->tok, "unexpected `%s`, expected `%s`", htok_name(parser->tok.type), htok_name(expected));
+	} else if (parser->tok.type == HTOK_EOF) {
+		hcc_err_with_pos(ctx, parser->tok, "unexpected EOF, expected `%s`", htok_name(expected));
 	}
-	hparser_next(ctx, parser);
-	return true;
 }
+
 
 static void hparser_expect(hcc_ctx_t *ctx, hparser_t *parser, htok_t expected) {
-	if (parser->tok.type != expected) {
+	if (parser->tok.type == expected) {
+		hparser_next(ctx, parser);
+	} else if (parser->tok.type == HTOK_EOF) {
+		hcc_err_with_pos(ctx, parser->tok, "unexpected EOF, expected `%s`", htok_name(expected));
+	} else {
 		hcc_err_with_pos(ctx, parser->tok, "unexpected `%s`, expected `%s`", htok_name(parser->tok.type), htok_name(expected));
 	}
 }
 
-static void hparser_expect_next(hcc_ctx_t *ctx, hparser_t *parser, htok_t expected) {
-	if (hparser_lex_is_eof(parser)) {
-		hcc_err(ctx, "unexpected EOF, expected `%s`", htok_name(expected));
-	}
-	hparser_next(ctx, parser);
-	if (parser->tok.type != expected) {
-		hcc_err_with_pos(ctx, parser->tok, "unexpected `%s`, expected `%s`", htok_name(parser->tok.type), htok_name(expected));
+static void hparser_expect_not_eof(hcc_ctx_t *ctx, hparser_t *parser) {
+	if (parser->tok.type == HTOK_EOF) {
+		hcc_err_with_pos(ctx, parser->tok, "unexpected EOF");
+	} else {
+		hparser_next(ctx, parser);
 	}
 }
 
-static void hparser_expect_next_not_eof(hcc_ctx_t *ctx, hparser_t *parser) {
-	if (hparser_lex_is_eof(parser)) {
-		hcc_err(ctx, "unexpected EOF");
-	}
-	hparser_next(ctx, parser);
+static bool hparser_is_eof(hparser_t *parser) {
+	return parser->tok.type == HTOK_EOF;
 }
+
+
+// static void hparser_expect_peek_not_eof(hcc_ctx_t *ctx, hparser_t *parser, htok_t expected) {
+// 	if (parser->tok.type == expected) {
+// 		hparser_next(ctx, parser);
+// 	} else if (parser->tok.type == HTOK_EOF) {
+// 		hcc_err_with_pos(ctx, parser->tok, "unexpected EOF, expected `%s`", htok_name(expected));
+// 	} else {
+// 		hcc_err_with_pos(ctx, parser->tok, "unexpected `%s`, expected `%s`", htok_name(parser->tok.type), htok_name(expected));
+// 	}
+// }
 
 static u32 hparser_new_cfg_node(hcc_ctx_t *ctx, hparser_t *parser) {
 	u32 nidx = stbds_arrlenu(ctx->arena.cfg_arena);
@@ -102,6 +140,8 @@ static u32 hcc_ast_node_from_literal(hcc_ctx_t *ctx, hparser_t *parser, htoken_t
 	if (negate) {
 		nodep->d_literal_int.value = -nodep->d_literal_int.value;
 	}
+
+	hparser_next(ctx, parser);
 
 	return node;
 }
@@ -201,6 +241,7 @@ static u8 hparser_tok_precedence(htok_t type) {
 	}
 }
 
+// TODO: rename no `hparser_expr` instead? no longer using *_next syntax
 static u32 hparser_expr_next(hcc_ctx_t *ctx, hparser_t *parser, u8 prec) {
 	u32 node;
 	hast_node_t *n;
@@ -213,19 +254,18 @@ static u32 hparser_expr_next(hcc_ctx_t *ctx, hparser_t *parser, u8 prec) {
 			n->d_ident.is_local = idx != (u32)-1;
 			n->d_ident.idx = idx; // -1 on not found
 			n->token = parser->tok;
-			hparser_next_if_not_eof(ctx, parser);
+			hparser_next(ctx, parser);
 			break;
 		}
 		case HTOK_OPAR: {
-			hparser_expect_next_not_eof(ctx, parser);
+			hparser_next(ctx, parser);
 			node = hparser_expr_next(ctx, parser, 0);
 			hparser_expect(ctx, parser, HTOK_CPAR);
-			hparser_next_if_not_eof(ctx, parser); // see 1:
+			hparser_next(ctx, parser);
 			break;
 		}
 		case HTOK_INTEGER: {
 			node = hcc_ast_node_from_literal(ctx, parser, parser->tok, false);
-			hparser_next_if_not_eof(ctx, parser); // see 1:
 			break;
 		}
 		default: {
@@ -233,12 +273,11 @@ static u32 hparser_expr_next(hcc_ctx_t *ctx, hparser_t *parser, u8 prec) {
 			
 			if (HTOK_IS_PREFIX(t)) {
 				htoken_t token = parser->tok;
-				hparser_expect_next_not_eof(ctx, parser);
+				hparser_expect_not_eof(ctx, parser);
 
 				// TODO: floats...
 				if (t == HTOK_SUB && parser->tok.type == HTOK_INTEGER) {
 					node = hcc_ast_node_from_literal(ctx, parser, parser->tok, true);
-					hparser_next_if_not_eof(ctx, parser); // see 1:
 				} else {
 					node = hparser_new_ast_node(ctx, parser, HAST_EXPR_PREFIX);
 					u32 next = hparser_expr_next(ctx, parser, PREC_PREFIX);
@@ -254,7 +293,7 @@ static u32 hparser_expr_next(hcc_ctx_t *ctx, hparser_t *parser, u8 prec) {
 	}
 
 	// 1: move the lexer along into either the next token state, or an EOF
-	if (hparser_lex_is_eof(parser)) {
+	if (hparser_is_eof(parser)) {
 		return node;
 	}
 
@@ -268,7 +307,7 @@ static u32 hparser_expr_next(hcc_ctx_t *ctx, hparser_t *parser, u8 prec) {
 					u8 prec = hparser_tok_precedence(parser->tok.type);
 
 					// next()
-					hparser_expect_next_not_eof(ctx, parser);
+					hparser_expect_not_eof(ctx, parser);
 
 					u32 lhs = node;
 					u32 rhs = hparser_expr_next(ctx, parser, prec);
@@ -313,7 +352,7 @@ static void hparser_body(hcc_ctx_t *ctx, hparser_t *parser, u32 cfg_node) {
 	hcfg_node_t *cfg = hcc_cfg_node(ctx, cfg_node);
 	u32 current_ast = cfg->ast_begin;
 
-	hparser_expect_next_not_eof(ctx, parser);
+	hparser_expect_not_eof(ctx, parser);
 
 	while (true) {
 		if (parser->tok.type == HTOK_CBRACE) {
@@ -342,42 +381,31 @@ static void hparser_fn_asm_body(hcc_ctx_t *ctx, hparser_t *parser, hproc_t *proc
 	assert(0 && "TODO: not implemented");
 }
 
-// WARNING: will call next
-static htype_t hparser_next_parse_type(hcc_ctx_t *ctx, hparser_t *parser) {
-	htoken_t tok = parser->tok;
-
-	if (hparser_lex_is_eof(parser)) {
-		hcc_err_with_pos(ctx, tok, "unexpected EOF while parsing type");
-	}
-
-	hparser_next(ctx, parser); // safe to call next()
-	tok = parser->tok;
-
-	switch (parser->tok.type) {		
-		case HTOK_MUL:
-			return htable_type_inc_muls(ctx, hparser_next_parse_type(ctx, parser));
-		case HTOK_QUESTION:
-			return htable_type_option_of(ctx, hparser_next_parse_type(ctx, parser));
-		case HTOK_IDENT:
-			return htable_type_get(ctx, tok);
-		default:
-			hcc_err_with_pos(ctx, parser->tok, "unexpected token `%s` inside type", htok_name(parser->tok.type));
-	}
-}
-
 static htype_t hparser_parse_type(hcc_ctx_t *ctx, hparser_t *parser) {
 	htoken_t tok = parser->tok;
 
+	htype_t type;
+
 	switch (parser->tok.type) {		
 		case HTOK_MUL:
-			return htable_type_inc_muls(ctx, hparser_next_parse_type(ctx, parser));
+			hparser_next(ctx, parser);
+			return htable_type_inc_muls(ctx, hparser_parse_type(ctx, parser));
 		case HTOK_QUESTION:
-			return htable_type_option_of(ctx, hparser_next_parse_type(ctx, parser));
+			hparser_next(ctx, parser);
+			return htable_type_option_of(ctx, hparser_parse_type(ctx, parser));
 		case HTOK_IDENT:
-			return htable_type_get(ctx, tok);
+			type = htable_type_get(ctx, tok);
+			break;
+		case HTOK_EOF:
+			hcc_err_with_pos(ctx, parser->tok, "unexpected EOF inside type", htok_name(parser->tok.type));
 		default:
 			hcc_err_with_pos(ctx, parser->tok, "unexpected token `%s` inside type", htok_name(parser->tok.type));
 	}
+
+	// terminating condition
+	hparser_next(ctx, parser);
+
+	return type;
 }
 
 static void hparser_pop_scope(hcc_ctx_t *ctx, hparser_t *parser) {
@@ -391,16 +419,15 @@ static void hparser_fn_stmt(hcc_ctx_t *ctx, hparser_t *parser) {
 
 	if (parser->tok.type == HTOK_EXTERN) {
 		proc.is_extern = true;
-		hparser_expect_next(ctx, parser, HTOK_FN);
+		hparser_expect(ctx, parser, HTOK_FN);
+	} else {
+		hparser_next(ctx, parser);
 	}
 
-	assert(parser->tok.type == HTOK_FN);
-
-	hparser_expect_next(ctx, parser, HTOK_IDENT);
+	hparser_expect(ctx, parser, HTOK_IDENT);
 	htoken_t fn_name = parser->tok;
 	proc.fn_name = fn_name;
-	hparser_expect_next(ctx, parser, HTOK_OPAR);
-	hparser_next(ctx, parser);
+	hparser_expect(ctx, parser, HTOK_OPAR);
 
 	// NOTE: you are using a scratch buffer, this is fucking unsafe!
 	//       make your prayers that the type function still clones
@@ -411,13 +438,17 @@ static void hparser_fn_stmt(hcc_ctx_t *ctx, hparser_t *parser) {
 
 	_Static_assert(ARRAYSIZE(scratch_buf_args) == ARRAYSIZE(scratch_buf_types), "uhh");
 
+
+	// TODO: fix like the bottom param parsing
+
 	// parse type list
 	while (parser->tok.type != HTOK_CPAR) {
-		hparser_expect(ctx, parser, HTOK_IDENT);
+		hparser_check(ctx, parser, HTOK_IDENT);
 		htoken_t arg_name = parser->tok;
-		hparser_expect_next(ctx, parser, HTOK_COLON);
+		hparser_next(ctx, parser);
+		hparser_expect(ctx, parser, HTOK_COLON);
 
-		htype_t type = hparser_next_parse_type(ctx, parser);
+		htype_t type = hparser_parse_type(ctx, parser);
 
 		for (u32 i = 0; i < scratch_buf_len; i++) {
 			if (hsv_memcmp(arg_name.p, arg_name.len, scratch_buf_args[i].p, scratch_buf_args[i].len)) {
@@ -443,33 +474,31 @@ static void hparser_fn_stmt(hcc_ctx_t *ctx, hparser_t *parser) {
 	fn_type.d_fn.rets = NULL;
 	fn_type.d_fn.rets_len = 0;
 
-	if (hparser_next_if_not_eof(ctx, parser) && parser->tok.type == HTOK_COLON) {
+
+	if (parser->peek.type == HTOK_COLON) {
 		u32 scratch_buf_len_start = scratch_buf_len;
 
-		if (hparser_lex_is_eof(parser)) {
-			hcc_err_with_pos(ctx, parser->tok, "unexpected EOF while parsing type");
-		}
-		hparser_next(ctx, parser); // safe to call next()
-
+		hparser_next(ctx, parser);
+		hparser_expect_not_eof(ctx, parser);
 		if (parser->tok.type == HTOK_OPAR) {
-			if (hparser_lex_is_eof(parser)) {
-				hcc_err_with_pos(ctx, parser->tok, "unexpected EOF while parsing type");
-			}
-			hparser_next(ctx, parser); // safe to call next()
+			hparser_expect_not_eof(ctx, parser);
 			while (parser->tok.type != HTOK_CPAR) {
+				// TODO: unify `hparser_parse_type` and `hparser_parse_type_next`
 				htype_t type = hparser_parse_type(ctx, parser);
 
 				assert(scratch_buf_len < ARRAYSIZE(scratch_buf_args));
 				scratch_buf_types[scratch_buf_len] = type;
 				scratch_buf_len++;
 
-				hparser_next(ctx, parser);
 				if (parser->tok.type == HTOK_COMMA) {
 					hparser_next(ctx, parser);
 				}
 			}
+			// (, **T)
+			//       ^
+			hparser_next(ctx, parser);
 		} else {
-			htype_t type = hparser_next_parse_type(ctx, parser);
+			htype_t type = hparser_parse_type(ctx, parser);
 
 			assert(scratch_buf_len < ARRAYSIZE(scratch_buf_args));
 			scratch_buf_types[scratch_buf_len] = type;
@@ -479,6 +508,9 @@ static void hparser_fn_stmt(hcc_ctx_t *ctx, hparser_t *parser) {
 		fn_type.d_fn.rets = scratch_buf_types + scratch_buf_len_start;
 		fn_type.d_fn.rets_len = scratch_buf_len - scratch_buf_len_start;
 	}
+
+	// ): (a, b) {}
+	//         ^
 
 	proc.fn_type = htable_intern_append(ctx, fn_type);
 	htable_type_dump(ctx, proc.fn_type);
@@ -498,10 +530,13 @@ static void hparser_fn_stmt(hcc_ctx_t *ctx, hparser_t *parser) {
 	u32 procs_len = stbds_arrlenu(ctx->procs);
 	stbds_arrpush(ctx->procs, proc);
 	ctx->current_proc = &ctx->procs[procs_len];
-
 	ctx->current_proc->cfg_begin = -1;
+
+	// ): (a, b) {}
+	//         ^
+
 	// has body
-	if (hparser_next_if_not_eof(ctx, parser)) {
+	if (parser->peek.type != HTOK_EOF) {
 		assert(parser->scope_spans_len == 0);
 		hparser_push_scope(ctx, parser);
 		parser->scope_spans[0].end = scratch_buf_args_len;
@@ -519,6 +554,8 @@ static void hparser_fn_stmt(hcc_ctx_t *ctx, hparser_t *parser) {
 		}
 
 		hparser_pop_scope(ctx, parser);
+	} else {
+		assert(0 && "TODO: must need body for now");
 	}
 }
 
@@ -537,7 +574,7 @@ static void hparser_top_stmt(hcc_ctx_t *ctx, hparser_t *parser) {
 }
 
 void hparser_run(hcc_ctx_t *ctx, hparser_t *parser) {
-	while(!hparser_lex_is_eof(parser)) {
+	while(parser->tok.type != HTOK_EOF) {
 		hparser_next(ctx, parser); // TODO: what about whitespace at the EOF??? argh..
 		hparser_top_stmt(ctx, parser);
 	}
