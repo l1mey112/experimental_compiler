@@ -23,14 +23,17 @@ retry:;
 			break;
 		}
 		case HAST_EXPR_PREFIX: {
-			printf("%s", htok_name(p->token.type));
+			printf("(%s ", htok_name(p->token.type));
 			_hproc_ast_dump(ctx, p->children[0]);
+			printf(")");
 			break;
 		}
 		case HAST_EXPR_INFIX: {
+			printf("(%s ", htok_name(p->token.type));
 			_hproc_ast_dump(ctx, p->children[0]);
-			printf(" %s ", htok_name(p->token.type));
+			printf(" ");
 			_hproc_ast_dump(ctx, p->children[1]);
+			printf(")");
 			break;
 		}
 		default: {

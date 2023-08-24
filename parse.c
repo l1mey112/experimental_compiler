@@ -212,7 +212,7 @@ static u32 hparser_expr_next(hcc_ctx_t *ctx, hparser_t *parser, u8 prec) {
 		}
 		case HTOK_OPAR: {
 			hparser_expect_next_not_eof(ctx, parser);
-			node = hparser_expr_next(ctx, parser, prec);
+			node = hparser_expr_next(ctx, parser, 0);
 			hparser_expect(ctx, parser, HTOK_CPAR);
 			hparser_next_if_not_eof(ctx, parser); // see 1:
 			break;
@@ -235,9 +235,10 @@ static u32 hparser_expr_next(hcc_ctx_t *ctx, hparser_t *parser, u8 prec) {
 					hparser_next_if_not_eof(ctx, parser); // see 1:
 				} else {
 					node = hparser_new_ast_node(ctx, parser, HAST_EXPR_PREFIX);
+					u32 next = hparser_expr_next(ctx, parser, PREC_PREFIX);
 					n = hcc_ast_node(ctx, node);
 					n->token = token;
-					n->children[0] = hparser_expr_next(ctx, parser, PREC_PREFIX);
+					n->children[0] = next;
 				}
 			} else {
 				hcc_err_with_pos(ctx, parser->tok, "unexpected `%s` in prefix position", htok_name(t));
@@ -274,6 +275,8 @@ static u32 hparser_expr_next(hcc_ctx_t *ctx, hparser_t *parser, u8 prec) {
 
 					node = expr;
 				} else {
+					printf("exit!\n");
+					hlex_token_dump(token);
 					goto exit;
 				}
 				break;
@@ -285,13 +288,13 @@ exit:
 	return node;
 }
 
-static u32 hparser_fn_body_stmt(hcc_ctx_t *ctx, hparser_t *parser) {
+static u32 hparser_fn_body_stmt_next(hcc_ctx_t *ctx, hparser_t *parser) {
 	switch (parser->tok.type) {
 		default: {
 			u32 node = hparser_new_ast_node(ctx, parser, HAST_STMT_EXPR);
-			printf("node: %u, sizeof: %lu\n", node, stbds_arrlenu(ctx->arena.ast_arena));
+			u32 next = hparser_expr_next(ctx, parser, 0);
 			hast_node_t *n = hcc_ast_node(ctx, node);
-			n->children[0] = hparser_expr_next(ctx, parser, 0);
+			n->children[0] = next;
 			return node;
 		}
 	}
@@ -313,7 +316,8 @@ static void hparser_body(hcc_ctx_t *ctx, hparser_t *parser, u32 cfg_node) {
 			return;
 		}
 
-		u32 node = hparser_fn_body_stmt(ctx, parser);
+		u32 node = hparser_fn_body_stmt_next(ctx, parser);
+		printf("node: %u, ch: %u\n", node, hcc_ast_node(ctx, node)->children[0]);
 
 		// cfg is empty
 		if (current_ast == (u32)-1) {

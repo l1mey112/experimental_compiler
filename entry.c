@@ -14,7 +14,7 @@ int main(void) {
 
 	const char *work =
 		"extern fn test(a: i32, b: ?T): (*T, *i8) {\n"
-		"    \n"
+		"    -(10 + 2)\n"
 		"}";
 
 	printf("%s\n", work);
