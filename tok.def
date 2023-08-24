@@ -2,6 +2,7 @@ X(HTOK_FN, "fn")
 X(HTOK_EXTERN, "extern")
 X(HTOK_ASM, "asm")
 X(HTOK_AS, "as")
+X(HTOK_RETURN, "return")
 
 #ifndef X_ONLY_LITERALS
 

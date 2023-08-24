@@ -16,6 +16,11 @@ retry:;
 			ast = p->children[0];
 			goto retry;
 		}
+		case HAST_STMT_RETURN: {
+			printf("return ");
+			_hproc_ast_dump(ctx, p->children[0]);
+			break;
+		}
 		case HAST_EXPR_IDENT: {
 			printf("%.*s", (int)p->token.len, p->token.p);
 			if (p->d_ident.idx != (u32)-1) {

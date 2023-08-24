@@ -13,6 +13,7 @@ typedef enum hast_kind_t hast_kind_t;
 
 enum hast_kind_t {
 	HAST_STMT_EXPR, // TODO: retire STMT EXPR, it doesn't make sense...
+	HAST_STMT_RETURN,
 	HAST_EXPR_LITERAL_INT,
 	HAST_EXPR_LITERAL_FLOAT,
 	HAST_EXPR_IDENT,

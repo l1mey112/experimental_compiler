@@ -15,9 +15,10 @@ int main(void) {
 	hcc_ctx_t ctx = {};
 
 	const char *work =
-		"fn test(a: i32) {\n"
+		"fn test(a: i32): i32 {\n"
 		"    b: i32\n"
 		"    b = 23\n"
+		"    return b\n"
 		"}";
 
 	// -(10 + 2) + a

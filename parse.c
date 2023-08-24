@@ -408,11 +408,22 @@ static u32 hparser_fn_body_stmt_next(hcc_ctx_t *ctx, hparser_t *parser) {
 		return node;
 	}
 
-	u32 node = hparser_new_ast_node(ctx, parser, HAST_STMT_EXPR);
-	u32 next = hparser_expr_next(ctx, parser, 0);
-	hcc_ast_node(ctx, node)->children[0] = next;
-	return node;
-	
+	switch (parser->tok.type) {
+		case HTOK_RETURN: {
+			u32 node = hparser_new_ast_node(ctx, parser, HAST_STMT_RETURN);
+			hparser_expect_not_eof(ctx, parser);
+			u32 next = hparser_expr_next(ctx, parser, 0);
+			hcc_ast_node(ctx, node)->children[0] = next;
+			return node;
+		}
+		default: {
+			u32 node = hparser_new_ast_node(ctx, parser, HAST_STMT_EXPR);
+			u32 next = hparser_expr_next(ctx, parser, 0);
+			hcc_ast_node(ctx, node)->children[0] = next;
+			return node;
+		}
+	}
+
 	assert_not_reached();
 }
 
@@ -526,7 +537,6 @@ static void hparser_fn_stmt(hcc_ctx_t *ctx, hparser_t *parser) {
 	if (parser->tok.type == HTOK_COLON) {
 		u32 scratch_buf_len_start = scratch_buf_len;
 
-		hparser_next(ctx, parser);
 		hparser_expect_not_eof(ctx, parser);
 		if (parser->tok.type == HTOK_OPAR) {
 			hparser_expect_not_eof(ctx, parser);
