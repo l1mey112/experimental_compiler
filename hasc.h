@@ -14,7 +14,6 @@ struct hcc_ctx_t {
 	char err_msg[256];
 
 	struct {
-		hcfg_node_t *cfg_arena;
 		hast_node_t *ast_arena;
 	} arena;
 	hproc_t *current_proc; // should be moved into parser? maybe not?
@@ -31,9 +30,7 @@ noreturn void hcc_err(hcc_ctx_t *ctx, const char *fmt, ...);
 noreturn void hcc_err_with_pos(hcc_ctx_t *ctx, htoken_t tok, const char *fmt, ...)
 	__attribute__((format(printf, 3, 4)));
 
-hcfg_node_t *hcc_cfg_node(hcc_ctx_t *ctx, u32 node);
 hast_node_t *hcc_ast_node(hcc_ctx_t *ctx, u32 node);
-hcfg_node_t *hcc_cfg_node_opt(hcc_ctx_t *ctx, u32 node);
 hast_node_t *hcc_ast_node_opt(hcc_ctx_t *ctx, u32 node);
 
 #define FOR_PIN_AST(node, name) \

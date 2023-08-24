@@ -56,18 +56,6 @@ static bool hparser_is_eof(hparser_t *parser) {
 	return parser->tok.type == HTOK_EOF;
 }
 
-static u32 hparser_new_cfg_node(hcc_ctx_t *ctx, hparser_t *parser) {
-	u32 nidx = stbds_arrlenu(ctx->arena.cfg_arena);
-	hcfg_node_t node;
-	node.nidx = nidx;
-	node.node_false = -1;
-	node.node_true = -1;
-	node.ast_begin = -1;
-	node.ast_cond = -1;
-	stbds_arrpush(ctx->arena.cfg_arena, node);
-	return nidx;
-}
-
 static u32 hparser_new_ast_node(hcc_ctx_t *ctx, hparser_t *parser, hast_kind_t kind) {
 	u32 nidx = stbds_arrlenu(ctx->arena.ast_arena);
 	hast_node_t node = {
@@ -428,11 +416,12 @@ static u32 hparser_fn_body_stmt_next(hcc_ctx_t *ctx, hparser_t *parser) {
 }
 
 // TODO: refactor to parse just a {} and store the scope stuff here
-static void hparser_body(hcc_ctx_t *ctx, hparser_t *parser, u32 cfg_node) {
+// return STMT LIST
+static u32 hparser_body(hcc_ctx_t *ctx, hparser_t *parser) {
 	assert(parser->tok.type == HTOK_OBRACE);
 
-	hcfg_node_t *cfg = hcc_cfg_node(ctx, cfg_node);
-	u32 current_ast = cfg->ast_begin;
+	u32 current_ast_start = -1;
+	u32 current_ast = -1;
 
 	hparser_expect_not_eof(ctx, parser);
 
@@ -447,10 +436,8 @@ static void hparser_body(hcc_ctx_t *ctx, hparser_t *parser, u32 cfg_node) {
 		}
 		printf("node: %u, ch(0): %u, ch(1): %u\n", node, hcc_ast_node(ctx, node)->children[0], hcc_ast_node(ctx, node)->children[1]);
 
-		// cfg is empty
 		if (current_ast == (u32)-1) {
-			cfg = hcc_cfg_node(ctx, cfg_node);
-			cfg->ast_begin = node;
+			current_ast_start = node;
 		} else {
 			hast_node_t *current_nodep = hcc_ast_node(ctx, current_ast);
 			current_nodep->next = node;
@@ -461,6 +448,8 @@ static void hparser_body(hcc_ctx_t *ctx, hparser_t *parser, u32 cfg_node) {
 	// }
 	// ^
 	hparser_next(ctx, parser);
+
+	return current_ast_start;
 }
 
 static void hparser_fn_asm_body(hcc_ctx_t *ctx, hparser_t *parser, hproc_t *proc) {
@@ -575,7 +564,6 @@ static void hparser_fn_stmt(hcc_ctx_t *ctx, hparser_t *parser) {
 	u32 procs_len = stbds_arrlenu(ctx->procs);
 	stbds_arrpush(ctx->procs, proc);
 	ctx->current_proc = &ctx->procs[procs_len];
-	ctx->current_proc->cfg_begin = -1;
 
 	// NOTE: can't use `proc` anymore
 
@@ -603,9 +591,7 @@ static void hparser_fn_stmt(hcc_ctx_t *ctx, hparser_t *parser) {
 	if (parser->peek.type != HTOK_EOF) {
 		if (parser->tok.type == HTOK_OBRACE) {
 			// body
-			u32 cfg_c = hparser_new_cfg_node(ctx, parser);
-			ctx->current_proc->cfg_begin = cfg_c;
-			hparser_body(ctx, parser, cfg_c);
+			ctx->current_proc->ast_begin = hparser_body(ctx, parser);
 		} else if (parser->tok.type == HTOK_ASM) {
 			// asm body
 			hparser_fn_asm_body(ctx, parser, &proc);

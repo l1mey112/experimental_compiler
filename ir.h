@@ -5,7 +5,6 @@
 #include "shared.h"
 
 typedef struct hast_node_t hast_node_t;
-typedef struct hcfg_node_t hcfg_node_t;
 typedef struct hproc_t hproc_t;
 typedef struct harg_t harg_t;
 typedef struct hast_ident_t hast_ident_t;
@@ -19,14 +18,6 @@ enum hast_kind_t {
 	HAST_EXPR_IDENT,
 	HAST_EXPR_PREFIX,
 	HAST_EXPR_INFIX,
-};
-
-struct hcfg_node_t {
-	u32 nidx;
-	u32 ast_begin;
-	u32 ast_cond;  // if -1, goto true, else false
-	u32 node_true;
-	u32 node_false;
 };
 
 // `next` for linked list of stuffs
@@ -58,7 +49,7 @@ struct hast_ident_t {
 };
 
 struct hproc_t {
-	u32 cfg_begin; // -1, for no body
+	u32 ast_begin;
 	htoken_t fn_name;
 	hast_ident_t *locals;
 	htype_t fn_type;
