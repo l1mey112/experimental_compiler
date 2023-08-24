@@ -6,22 +6,28 @@
 #include "ir.h"
 #include "parse.h"
 #include "hasc.h"
-#include "lex.h"
+#include "tok.h"
 #include "shared.h"
 #include "stb_ds.h"
 #include "type.h"
 
 void hparser_init(hcc_ctx_t *ctx, hparser_t *parser, u8 *pc, size_t plen) {
-	hlex_init(&parser->lex_c, pc, plen);
+	parser->lex.pc = pc;
+	parser->lex.pend = pc + plen;
+	parser->lex.plast_nl = pc;
+
+	hparser_next(ctx, parser); // tok
+	hparser_next(ctx, parser); // tok peek
 }
 
-static void hparser_next(hcc_ctx_t *ctx, hparser_t *parser) {
-	parser->tok = hlex_next(&parser->lex_c, ctx);
-	// hlex_token_dump(parser->tok);
+void hparser_next(hcc_ctx_t *ctx, hparser_t *parser) {
+	parser->peek = parser->tok;
+	parser->tok = hparser_lex_next(parser, ctx);
+	// hparser_lex_token_dump(parser->tok);
 }
 
 static bool hparser_next_if_not_eof(hcc_ctx_t *ctx, hparser_t *parser) {
-	if (hlex_is_eof(&parser->lex_c)) {
+	if (hparser_lex_is_eof(parser)) {
 		return false;
 	}
 	hparser_next(ctx, parser);
@@ -35,7 +41,7 @@ static void hparser_expect(hcc_ctx_t *ctx, hparser_t *parser, htok_t expected) {
 }
 
 static void hparser_expect_next(hcc_ctx_t *ctx, hparser_t *parser, htok_t expected) {
-	if (hlex_is_eof(&parser->lex_c)) {
+	if (hparser_lex_is_eof(parser)) {
 		hcc_err(ctx, "unexpected EOF, expected `%s`", htok_name(expected));
 	}
 	hparser_next(ctx, parser);
@@ -45,7 +51,7 @@ static void hparser_expect_next(hcc_ctx_t *ctx, hparser_t *parser, htok_t expect
 }
 
 static void hparser_expect_next_not_eof(hcc_ctx_t *ctx, hparser_t *parser) {
-	if (hlex_is_eof(&parser->lex_c)) {
+	if (hparser_lex_is_eof(parser)) {
 		hcc_err(ctx, "unexpected EOF");
 	}
 	hparser_next(ctx, parser);
@@ -248,11 +254,11 @@ static u32 hparser_expr_next(hcc_ctx_t *ctx, hparser_t *parser, u8 prec) {
 	}
 
 	// 1: move the lexer along into either the next token state, or an EOF
-	if (hlex_is_eof(&parser->lex_c)) {
+	if (hparser_lex_is_eof(parser)) {
 		return node;
 	}
 
-	// hlex_token_dump(parser->tok);
+	// hparser_lex_token_dump(parser->tok);
 	while (prec < hparser_tok_precedence(parser->tok.type)) {
 		htoken_t token = parser->tok;
 		
@@ -275,8 +281,6 @@ static u32 hparser_expr_next(hcc_ctx_t *ctx, hparser_t *parser, u8 prec) {
 
 					node = expr;
 				} else {
-					printf("exit!\n");
-					hlex_token_dump(token);
 					goto exit;
 				}
 				break;
@@ -342,7 +346,7 @@ static void hparser_fn_asm_body(hcc_ctx_t *ctx, hparser_t *parser, hproc_t *proc
 static htype_t hparser_next_parse_type(hcc_ctx_t *ctx, hparser_t *parser) {
 	htoken_t tok = parser->tok;
 
-	if (hlex_is_eof(&parser->lex_c)) {
+	if (hparser_lex_is_eof(parser)) {
 		hcc_err_with_pos(ctx, tok, "unexpected EOF while parsing type");
 	}
 
@@ -442,13 +446,13 @@ static void hparser_fn_stmt(hcc_ctx_t *ctx, hparser_t *parser) {
 	if (hparser_next_if_not_eof(ctx, parser) && parser->tok.type == HTOK_COLON) {
 		u32 scratch_buf_len_start = scratch_buf_len;
 
-		if (hlex_is_eof(&parser->lex_c)) {
+		if (hparser_lex_is_eof(parser)) {
 			hcc_err_with_pos(ctx, parser->tok, "unexpected EOF while parsing type");
 		}
 		hparser_next(ctx, parser); // safe to call next()
 
 		if (parser->tok.type == HTOK_OPAR) {
-			if (hlex_is_eof(&parser->lex_c)) {
+			if (hparser_lex_is_eof(parser)) {
 				hcc_err_with_pos(ctx, parser->tok, "unexpected EOF while parsing type");
 			}
 			hparser_next(ctx, parser); // safe to call next()
@@ -533,7 +537,7 @@ static void hparser_top_stmt(hcc_ctx_t *ctx, hparser_t *parser) {
 }
 
 void hparser_run(hcc_ctx_t *ctx, hparser_t *parser) {
-	while(!hlex_is_eof(&parser->lex_c)) {
+	while(!hparser_lex_is_eof(parser)) {
 		hparser_next(ctx, parser); // TODO: what about whitespace at the EOF??? argh..
 		hparser_top_stmt(ctx, parser);
 	}

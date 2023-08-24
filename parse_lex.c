@@ -1,17 +1,9 @@
 #include "hasc.h"
-#include "lex.h"
+#include "tok.h"
 
 #include <ctype.h>
 #include <stdio.h>
 #include <assert.h>
-
-void hlex_init(hlex_t *lex, u8 *pc, size_t plen) {
-	*lex = (hlex_t){
-		.pc = pc,
-		.pend = pc + plen,
-		.plast_nl = pc,
-	};
-}
 
 static bool is_id_begin(u8 ch) {
     return isalpha(ch) || ch == '_';
@@ -21,31 +13,31 @@ static bool is_id(u8 ch) {
     return isalpha(ch) || ch == '_' || isdigit(ch);
 }
 
-bool hlex_is_eof(hlex_t *lex) {
-	return lex->pc >= lex->pend;
+bool hparser_lex_is_eof(hparser_t *parser) {
+	return parser->lex.pc >= parser->lex.pend;
 }
 
-htoken_t hlex_next(hlex_t *lex, hcc_ctx_t *ctx) {
-	while (lex->pc < lex->pend) {
-		u8 ch = *lex->pc;
+htoken_t hparser_lex_next(hparser_t *parser, hcc_ctx_t *ctx) {
+	while (parser->lex.pc < parser->lex.pend) {
+		u8 ch = *parser->lex.pc;
 
 		if (isspace(ch)) {
-			lex->pc++;
+			parser->lex.pc++;
 			if (ch == '\n') {
-				lex->plast_nl = lex->pc;
-				lex->line_nr++;
+				parser->lex.plast_nl = parser->lex.pc;
+				parser->lex.line_nr++;
 			}
 			continue;
 		}
 
 		if (is_id_begin(ch)) {
-			u8 *start = lex->pc;
+			u8 *start = parser->lex.pc;
 			do {
-				lex->pc++;
-			} while (lex->pc < lex->pend && is_id(*lex->pc));
+				parser->lex.pc++;
+			} while (parser->lex.pc < parser->lex.pend && is_id(*parser->lex.pc));
 
 			// get length and id pointer
-			size_t len = lex->pc - start;
+			size_t len = parser->lex.pc - start;
 
 			// TODO: keywords, token types...
 
@@ -61,39 +53,39 @@ htoken_t hlex_next(hlex_t *lex, hcc_ctx_t *ctx) {
 
 			return (htoken_t){
 				.type = type,
-				.row = lex->line_nr,
-				.col = lex->pc - lex->plast_nl - len,
+				.row = parser->lex.line_nr,
+				.col = parser->lex.pc - parser->lex.plast_nl - len,
 				.len = len,
 				.p = start,
 			};
 		} else if (isdigit(ch)) {
-			u8 *start = lex->pc;
+			u8 *start = parser->lex.pc;
 			do {
-				lex->pc++;
-			} while (lex->pc < lex->pend && isdigit(*lex->pc));
+				parser->lex.pc++;
+			} while (parser->lex.pc < parser->lex.pend && isdigit(*parser->lex.pc));
 
 			// get length and id pointer
-			size_t len = lex->pc - start;
+			size_t len = parser->lex.pc - start;
 
 			return (htoken_t){
 				.type = HTOK_INTEGER,
-				.row = lex->line_nr,
-				.col = lex->pc - lex->plast_nl - len,
+				.row = parser->lex.line_nr,
+				.col = parser->lex.pc - parser->lex.plast_nl - len,
 				.len = len,
 				.p = start,
 			};
 		} else {
 			htok_t tok;
 
-			u8 ch1 = lex->pc + 1 < lex->pend ? lex->pc[1] : 0;
-			u8 ch2 = lex->pc + 2 < lex->pend ? lex->pc[2] : 0;
+			u8 ch1 = parser->lex.pc + 1 < parser->lex.pend ? parser->lex.pc[1] : 0;
+			u8 ch2 = parser->lex.pc + 2 < parser->lex.pend ? parser->lex.pc[2] : 0;
 
-			u32 row = lex->line_nr;
-			u32 col = lex->pc - lex->plast_nl - 1;
+			u32 row = parser->lex.line_nr;
+			u32 col = parser->lex.pc - parser->lex.plast_nl - 1;
 			u32 len = 1;
 
 			htoken_t token = {
-				.p = lex->pc,
+				.p = parser->lex.pc,
 				.row = row,
 				.col = col,
 			};
@@ -102,11 +94,11 @@ htoken_t hlex_next(hlex_t *lex, hcc_ctx_t *ctx) {
 				case '+':
 					if (ch1 == '+') {
 						tok = HTOK_INC;
-						lex->pc++;
+						parser->lex.pc++;
 						len = 2;
 					} else if (ch1 == '=') {
 						tok = HTOK_ASSIGN_ADD;
-						lex->pc++;
+						parser->lex.pc++;
 						len = 2;
 					} else {
 						tok = HTOK_ADD;
@@ -115,11 +107,11 @@ htoken_t hlex_next(hlex_t *lex, hcc_ctx_t *ctx) {
 				case '-':
 					if (ch1 == '-') {
 						tok = HTOK_DEC;
-						lex->pc++;
+						parser->lex.pc++;
 						len = 2;
 					} else if (ch1 == '=') {
 						tok = HTOK_ASSIGN_SUB;
-						lex->pc++;
+						parser->lex.pc++;
 						len = 2;
 					} else {
 						tok = HTOK_SUB;
@@ -128,7 +120,7 @@ htoken_t hlex_next(hlex_t *lex, hcc_ctx_t *ctx) {
 				case '*':
 					if (ch1 == '=') {
 						tok = HTOK_ASSIGN_MUL;
-						lex->pc++;
+						parser->lex.pc++;
 						len = 2;
 					} else {
 						tok = HTOK_MUL;
@@ -137,7 +129,7 @@ htoken_t hlex_next(hlex_t *lex, hcc_ctx_t *ctx) {
 				case '/':
 					if (ch1 == '=') {
 						tok = HTOK_ASSIGN_DIV;
-						lex->pc++;
+						parser->lex.pc++;
 						len = 2;
 					} else {
 						tok = HTOK_DIV;
@@ -146,7 +138,7 @@ htoken_t hlex_next(hlex_t *lex, hcc_ctx_t *ctx) {
 				case '%':
 					if (ch1 == '=') {
 						tok = HTOK_ASSIGN_MOD;
-						lex->pc++;
+						parser->lex.pc++;
 						len = 2;
 					} else {
 						tok = HTOK_MOD;
@@ -155,7 +147,7 @@ htoken_t hlex_next(hlex_t *lex, hcc_ctx_t *ctx) {
 				case '=':
 					if (ch1 == '=') {
 						tok = HTOK_EQ;
-						lex->pc++;
+						parser->lex.pc++;
 						len = 2;
 					} else {
 						tok = HTOK_ASSIGN;
@@ -164,7 +156,7 @@ htoken_t hlex_next(hlex_t *lex, hcc_ctx_t *ctx) {
 				case '!':
 					if (ch1 == '=') {
 						tok = HTOK_NEQ;
-						lex->pc++;
+						parser->lex.pc++;
 					} else {
 						tok = HTOK_NOT;
 					}
@@ -173,11 +165,11 @@ htoken_t hlex_next(hlex_t *lex, hcc_ctx_t *ctx) {
 					if (ch1 == '<') {
 						tok = HTOK_LSHIFT;
 						len = 2;
-						lex->pc++;
+						parser->lex.pc++;
 					} else if (ch1 == '=') {
 						tok = HTOK_LE;
 						len = 2;
-						lex->pc++;
+						parser->lex.pc++;
 					} else {
 						tok = HTOK_LT;
 					}
@@ -187,16 +179,16 @@ htoken_t hlex_next(hlex_t *lex, hcc_ctx_t *ctx) {
 						if (ch2 == '>') {
 							tok = HTOK_RUSHIFT;
 							len = 3;
-							lex->pc += 2;
+							parser->lex.pc += 2;
 						} else {
 							tok = HTOK_RSHIFT;
 							len = 2;
-							lex->pc++;
+							parser->lex.pc++;
 						}
 					} else if (ch1 == '=') {
 						tok = HTOK_GE;
 						len = 2;
-						lex->pc++;
+						parser->lex.pc++;
 					} else {
 						tok = HTOK_GT;
 					}
@@ -205,7 +197,7 @@ htoken_t hlex_next(hlex_t *lex, hcc_ctx_t *ctx) {
 					if (ch1 == '&') {
 						tok = HTOK_AND;
 						len = 2;
-						lex->pc++;
+						parser->lex.pc++;
 					} else {
 						tok = HTOK_BAND;
 					}
@@ -215,7 +207,7 @@ htoken_t hlex_next(hlex_t *lex, hcc_ctx_t *ctx) {
 					if (ch1 == '|') {
 						tok = HTOK_OR;
 						len = 2;
-						lex->pc++;
+						parser->lex.pc++;
 					} else {
 						tok = HTOK_BOR;
 					}
@@ -262,7 +254,7 @@ htoken_t hlex_next(hlex_t *lex, hcc_ctx_t *ctx) {
 
 			token.len = len;
 			token.type = tok;
-			lex->pc++;
+			parser->lex.pc++;
 
 			return token;
 		}
@@ -271,16 +263,3 @@ htoken_t hlex_next(hlex_t *lex, hcc_ctx_t *ctx) {
 	assert_not_reached(); // can't call next() whilst EOF
 }
 
-const char *htok_name(htok_t tok) {
-	#define X(name, lit) \
-		if (tok == name) return lit;
-    #include "tok.def"
-    #undef X
-	
-	return "unknown token";
-}
-
-void hlex_token_dump(htoken_t token) {
-	printf("%u:%u:\t", token.row, token.col);
-	printf("'%.*s' - %s\n", token.len, token.p, htok_name(token.type));
-}

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "lex.h"
+#include "tok.h"
 #include "type.h"
 #include "shared.h"
 

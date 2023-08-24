@@ -7,7 +7,7 @@
 #undef STB_DS_IMPLEMENTATION
 
 #include "hasc.h"
-#include "lex.h"
+#include "tok.h"
 
 void hcc_err_with_pos(hcc_ctx_t *ctx, htoken_t tok, const char *fmt, ...) {
 	char buf[128];

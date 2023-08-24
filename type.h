@@ -1,11 +1,13 @@
 #pragma once
 
-#include "lex.h"
+#include "tok.h"
 #include "shared.h"
 
 typedef u16 htype_t;
 typedef enum htypeinfo_kind_t htypeinfo_kind_t;
 typedef struct htypeinfo_t htypeinfo_t;
+
+typedef struct hcc_ctx_t hcc_ctx_t;
 
 enum htypeinfo_kind_t {
 	HT_VOID,

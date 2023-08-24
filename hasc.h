@@ -2,7 +2,6 @@
 
 #include "shared.h"
 #include "parse.h"
-#include "lex.h"
 #include "ir.h"
 #include "type.h"
 
@@ -35,3 +34,10 @@ hcfg_node_t *hcc_cfg_node(hcc_ctx_t *ctx, u32 node);
 hast_node_t *hcc_ast_node(hcc_ctx_t *ctx, u32 node);
 hcfg_node_t *hcc_cfg_node_opt(hcc_ctx_t *ctx, u32 node);
 hast_node_t *hcc_ast_node_opt(hcc_ctx_t *ctx, u32 node);
+
+#define FOR_PIN_AST(node, name) \
+	for (hast_node_t *name = hcc_ast_node(ctx, (node));false;)
+
+#define FOR_PIN_CFG(node, name) \
+	for (hcfg_node_t *name = hcc_cfg_node(ctx, (node));false;)
+

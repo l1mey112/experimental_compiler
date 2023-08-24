@@ -3,7 +3,7 @@
 
 #include "hasc.h"
 #include "ir.h"
-#include "lex.h"
+#include "tok.h"
 #include "parse.h"
 #include "stb_ds.h"
 #include "type.h"
