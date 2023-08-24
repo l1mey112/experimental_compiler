@@ -15,9 +15,12 @@ int main(void) {
 	hcc_ctx_t ctx = {};
 
 	const char *work =
-		"extern fn test(a: i32, b: ?T): (*T, *i8) {\n"
-		"    -(10 + 2) + a\n"
+		"fn test(a: i32) {\n"
+		"    b: i32\n"
+		"    b = 23\n"
 		"}";
+
+	// -(10 + 2) + a
 
 	printf("%s\n", work);
 	hparser_init(&ctx, &parser, (u8 *)work, strlen(work));

@@ -9,9 +9,9 @@ typedef struct hcfg_node_t hcfg_node_t;
 typedef struct hproc_t hproc_t;
 typedef struct harg_t harg_t;
 typedef struct hast_ident_t hast_ident_t;
-typedef enum hast_type_t hast_type_t;
+typedef enum hast_kind_t hast_kind_t;
 
-enum hast_type_t {
+enum hast_kind_t {
 	HAST_STMT_EXPR, // TODO: retire STMT EXPR, it doesn't make sense...
 	HAST_EXPR_LITERAL_INT,
 	HAST_EXPR_LITERAL_FLOAT,
@@ -31,7 +31,7 @@ struct hcfg_node_t {
 // `next` for linked list of stuffs
 // comma EXPR
 struct hast_node_t {
-	hast_type_t type;
+	hast_kind_t kind;
 	htoken_t token;
 	u32 children[3];
 	u32 next; // linked list

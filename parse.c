@@ -25,34 +25,6 @@ void hparser_next(hcc_ctx_t *ctx, hparser_t *parser) {
 	parser->peek = hparser_lex_next(parser, ctx);
 }
 
-// static bool hparser_next_if_not_eof(hcc_ctx_t *ctx, hparser_t *parser) {
-// 	if (hparser_lex_is_eof(parser)) {
-// 		return false;
-// 	}
-// 	hparser_next(ctx, parser);
-// 	return true;
-// }
-// static void hparser_expect(hcc_ctx_t *ctx, hparser_t *parser, htok_t expected) {
-// 	if (parser->tok.type != expected) {
-// 		hcc_err_with_pos(ctx, parser->tok, "unexpected `%s`, expected `%s`", htok_name(parser->tok.type), htok_name(expected));
-// 	}
-// }
-// static void hparser_expect_next(hcc_ctx_t *ctx, hparser_t *parser, htok_t expected) {
-// 	if (hparser_lex_is_eof(parser)) {
-// 		hcc_err(ctx, "unexpected EOF, expected `%s`", htok_name(expected));
-// 	}
-// 	hparser_next(ctx, parser);
-// 	if (parser->tok.type != expected) {
-// 		hcc_err_with_pos(ctx, parser->tok, "unexpected `%s`, expected `%s`", htok_name(parser->tok.type), htok_name(expected));
-// 	}
-// }
-// static void hparser_expect_next_not_eof(hcc_ctx_t *ctx, hparser_t *parser) {
-// 	if (hparser_lex_is_eof(parser)) {
-// 		hcc_err(ctx, "unexpected EOF");
-// 	}
-// 	hparser_next(ctx, parser);
-// }
-
 static void hparser_check(hcc_ctx_t *ctx, hparser_t *parser, htok_t expected) {
 	if (parser->tok.type != expected) {
 		hcc_err_with_pos(ctx, parser->tok, "unexpected `%s`, expected `%s`", htok_name(parser->tok.type), htok_name(expected));
@@ -84,17 +56,6 @@ static bool hparser_is_eof(hparser_t *parser) {
 	return parser->tok.type == HTOK_EOF;
 }
 
-
-// static void hparser_expect_peek_not_eof(hcc_ctx_t *ctx, hparser_t *parser, htok_t expected) {
-// 	if (parser->tok.type == expected) {
-// 		hparser_next(ctx, parser);
-// 	} else if (parser->tok.type == HTOK_EOF) {
-// 		hcc_err_with_pos(ctx, parser->tok, "unexpected EOF, expected `%s`", htok_name(expected));
-// 	} else {
-// 		hcc_err_with_pos(ctx, parser->tok, "unexpected `%s`, expected `%s`", htok_name(parser->tok.type), htok_name(expected));
-// 	}
-// }
-
 static u32 hparser_new_cfg_node(hcc_ctx_t *ctx, hparser_t *parser) {
 	u32 nidx = stbds_arrlenu(ctx->arena.cfg_arena);
 	hcfg_node_t node;
@@ -107,10 +68,10 @@ static u32 hparser_new_cfg_node(hcc_ctx_t *ctx, hparser_t *parser) {
 	return nidx;
 }
 
-static u32 hparser_new_ast_node(hcc_ctx_t *ctx, hparser_t *parser, hast_type_t type) {
+static u32 hparser_new_ast_node(hcc_ctx_t *ctx, hparser_t *parser, hast_kind_t kind) {
 	u32 nidx = stbds_arrlenu(ctx->arena.ast_arena);
 	hast_node_t node = {
-		.type = type,
+		.kind = kind,
 		.children = {-1, -1, -1},
 		.next = -1,
 	};
@@ -148,7 +109,7 @@ static u32 hcc_ast_node_from_literal(hcc_ctx_t *ctx, hparser_t *parser, htoken_t
 
 // returns `-1` on error
 static u32 hparser_search_scope(hcc_ctx_t *ctx, hparser_t *parser, htoken_t token) {
-	assert(parser->scope_spans_len > 0);
+	assert(parser->scope_spans_len > 0 && "TODO: global scope...");
 
 	size_t hash = hsv_name_hash(token.p, token.len);
 
@@ -175,6 +136,63 @@ static void hparser_push_scope(hcc_ctx_t *ctx, hparser_t *parser) {
 	parser->scope_spans[parser->scope_spans_len].start = start;
 	parser->scope_spans[parser->scope_spans_len].end = start;
 	parser->scope_spans_len++;
+}
+
+static void hparser_pop_scope(hcc_ctx_t *ctx, hparser_t *parser) {
+	assert(parser->scope_spans_len > 0);
+	parser->scope_spans_len--;
+}
+
+// returns ident idx
+static u32 hparser_new_local_var(hcc_ctx_t *ctx, hparser_t *parser, htoken_t token, htype_t type) {
+	hast_ident_t ident = {
+		.is_arg = false,
+		.name_hash = hsv_name_hash(token.p, token.len),
+		.token = token,
+		.type = type,
+	};
+
+	// TODO: can't shadow variables in same scope either!
+	//       or not?
+	u32 search = hparser_search_scope(ctx, parser, token);
+	if (search != (u32)-1 && ctx->current_proc->locals[search].is_arg) {
+		hcc_err_with_pos(ctx, token, "variable `%.*s` cannot shadow arguments", (int)token.len, token.p);
+	}
+	
+	u32 ident_idx = stbds_arrlenu(ctx->current_proc->locals);
+	stbds_arrpush(ctx->current_proc->locals, ident);
+	assert(parser->scope_spans_len > 0);
+	parser->scope_spans[parser->scope_spans_len - 1].end++;
+	assert(parser->scope_spans[parser->scope_spans_len - 1].end == stbds_arrlenu(ctx->current_proc->locals));
+
+	return ident_idx;
+}
+
+static htype_t hparser_parse_type(hcc_ctx_t *ctx, hparser_t *parser) {
+	htoken_t tok = parser->tok;
+
+	htype_t type;
+
+	switch (parser->tok.type) {		
+		case HTOK_MUL:
+			hparser_next(ctx, parser);
+			return htable_type_inc_muls(ctx, hparser_parse_type(ctx, parser));
+		case HTOK_QUESTION:
+			hparser_next(ctx, parser);
+			return htable_type_option_of(ctx, hparser_parse_type(ctx, parser));
+		case HTOK_IDENT:
+			type = htable_type_get(ctx, tok);
+			break;
+		case HTOK_EOF:
+			hcc_err_with_pos(ctx, parser->tok, "unexpected EOF inside type");
+		default:
+			hcc_err_with_pos(ctx, parser->tok, "unexpected token `%s` inside type", htok_name(parser->tok.type));
+	}
+
+	// terminating condition
+	hparser_next(ctx, parser);
+
+	return type;
 }
 
 enum {
@@ -286,7 +304,6 @@ static u32 hparser_expr_next(hcc_ctx_t *ctx, hparser_t *parser, u8 prec) {
 					n->children[0] = next;
 				}
 			} else {
-				assert(parser->tok.type == HTOK_EOF);
 				hcc_err_with_pos(ctx, parser->tok, "unexpected `%s` in prefix position", htok_name(t));
 			}
 			break;
@@ -334,19 +351,68 @@ exit:
 	return node;
 }
 
-static u32 hparser_fn_body_stmt_next(hcc_ctx_t *ctx, hparser_t *parser) {
-	switch (parser->tok.type) {
-		default: {
-			htoken_dump(parser->tok);
+static u32 hparser_parse_var_dec(hcc_ctx_t *ctx, hparser_t *parser) {
+	// TODO: if (parser->scope_spans_len == 0) <- global!
 
-			u32 node = hparser_new_ast_node(ctx, parser, HAST_STMT_EXPR);
-			u32 next = hparser_expr_next(ctx, parser, 0);
-			hast_node_t *n = hcc_ast_node(ctx, node);
-			n->children[0] = next;
-			return node;
-		}
+	htoken_t name = parser->tok;
+	hparser_next(ctx, parser);
+	hparser_next(ctx, parser);
+	htype_t type = hparser_parse_type(ctx, parser);
+
+	// a: T
+	//     ^
+
+	if (parser->tok.type != HTOK_ASSIGN) {
+		(void)hparser_new_local_var(ctx, parser, name, type);
+		return -1;
 	}
 
+	htoken_t eq = parser->tok;
+	hparser_expect(ctx, parser, HTOK_ASSIGN);
+	// a: T = expr
+	//        ^
+
+	u32 lhs = hparser_new_ast_node(ctx, parser, HAST_EXPR_IDENT);
+	u32 rhs = hparser_expr_next(ctx, parser, 0);
+	u32 node = hparser_new_ast_node(ctx, parser, HAST_EXPR_INFIX);
+
+	printf("parsed: %u\n", node);
+	
+	// can't access var inside declaration
+	u32 idx = hparser_new_local_var(ctx, parser, name, type);
+
+	FOR_PIN_AST(lhs, n) {
+		n->token = name;
+		n->d_ident.idx = idx;
+		n->d_ident.is_local = true;
+		break;
+	}
+	FOR_PIN_AST(node, n) {
+		n->children[0] = lhs;
+		n->children[1] = rhs;
+		n->token = eq;
+		break;
+	}
+
+	return node;
+}
+
+static u32 hparser_fn_body_stmt_next(hcc_ctx_t *ctx, hparser_t *parser) {
+	if (parser->tok.type == HTOK_IDENT && parser->peek.type == HTOK_COLON) {
+		u32 next = hparser_parse_var_dec(ctx, parser);
+		if (next == (u32)-1) {
+			return -1;
+		}
+		u32 node = hparser_new_ast_node(ctx, parser, HAST_STMT_EXPR);
+		hcc_ast_node(ctx, node)->children[0] = next;
+		return node;
+	}
+
+	u32 node = hparser_new_ast_node(ctx, parser, HAST_STMT_EXPR);
+	u32 next = hparser_expr_next(ctx, parser, 0);
+	hcc_ast_node(ctx, node)->children[0] = next;
+	return node;
+	
 	assert_not_reached();
 }
 
@@ -365,7 +431,10 @@ static void hparser_body(hcc_ctx_t *ctx, hparser_t *parser, u32 cfg_node) {
 		}
 
 		u32 node = hparser_fn_body_stmt_next(ctx, parser);
-		printf("node: %u, ch: %u\n", node, hcc_ast_node(ctx, node)->children[0]);
+		if (node == (u32)-1) {
+			continue; // can eval to nothing..
+		}
+		printf("node: %u, ch(0): %u, ch(1): %u\n", node, hcc_ast_node(ctx, node)->children[0], hcc_ast_node(ctx, node)->children[1]);
 
 		// cfg is empty
 		if (current_ast == (u32)-1) {
@@ -387,38 +456,6 @@ static void hparser_fn_asm_body(hcc_ctx_t *ctx, hparser_t *parser, hproc_t *proc
 	(void)ctx;
 	(void)proc;
 	assert(0 && "TODO: not implemented");
-}
-
-static htype_t hparser_parse_type(hcc_ctx_t *ctx, hparser_t *parser) {
-	htoken_t tok = parser->tok;
-
-	htype_t type;
-
-	switch (parser->tok.type) {		
-		case HTOK_MUL:
-			hparser_next(ctx, parser);
-			return htable_type_inc_muls(ctx, hparser_parse_type(ctx, parser));
-		case HTOK_QUESTION:
-			hparser_next(ctx, parser);
-			return htable_type_option_of(ctx, hparser_parse_type(ctx, parser));
-		case HTOK_IDENT:
-			type = htable_type_get(ctx, tok);
-			break;
-		case HTOK_EOF:
-			hcc_err_with_pos(ctx, parser->tok, "unexpected EOF inside type");
-		default:
-			hcc_err_with_pos(ctx, parser->tok, "unexpected token `%s` inside type", htok_name(parser->tok.type));
-	}
-
-	// terminating condition
-	hparser_next(ctx, parser);
-
-	return type;
-}
-
-static void hparser_pop_scope(hcc_ctx_t *ctx, hparser_t *parser) {
-	assert(parser->scope_spans_len > 0);
-	parser->scope_spans_len--;
 }
 
 static void hparser_fn_stmt(hcc_ctx_t *ctx, hparser_t *parser) {
@@ -482,8 +519,11 @@ static void hparser_fn_stmt(hcc_ctx_t *ctx, hparser_t *parser) {
 
 
 	// (a: T, b: T): ...
-	//            ^|
-	if (parser->peek.type == HTOK_COLON) {
+	//            ^
+	hparser_next(ctx, parser);
+	// (a: T, b: T): ...
+	//             ^
+	if (parser->tok.type == HTOK_COLON) {
 		u32 scratch_buf_len_start = scratch_buf_len;
 
 		hparser_next(ctx, parser);
@@ -518,10 +558,21 @@ static void hparser_fn_stmt(hcc_ctx_t *ctx, hparser_t *parser) {
 	}
 
 	// ): (a, b) {}
-	//         ^
+	//           ^
 
 	proc.fn_type = htable_intern_append(ctx, fn_type);
-	htable_type_dump(ctx, proc.fn_type);
+
+	u32 procs_len = stbds_arrlenu(ctx->procs);
+	stbds_arrpush(ctx->procs, proc);
+	ctx->current_proc = &ctx->procs[procs_len];
+	ctx->current_proc->cfg_begin = -1;
+
+	// NOTE: can't use `proc` anymore
+
+	assert(parser->scope_spans_len == 0);
+	hparser_push_scope(ctx, parser);
+	// parser->scope_spans[0].end == 0;
+	parser->scope_spans[0].end = scratch_buf_args_len;
 
 	for (u32 i = 0; i < scratch_buf_args_len; i++) {
 		htoken_t token = scratch_buf_args[i];
@@ -532,24 +583,14 @@ static void hparser_fn_stmt(hcc_ctx_t *ctx, hparser_t *parser) {
 			.token = token,
 			.type = type,
 		};
-		stbds_arrpush(proc.locals, ident);
+		stbds_arrpush(ctx->current_proc->locals, ident);
 	}
-
-	u32 procs_len = stbds_arrlenu(ctx->procs);
-	stbds_arrpush(ctx->procs, proc);
-	ctx->current_proc = &ctx->procs[procs_len];
-	ctx->current_proc->cfg_begin = -1;
 
 	// ): (a, b) {}
 	//         ^
 
 	// has body
 	if (parser->peek.type != HTOK_EOF) {
-		assert(parser->scope_spans_len == 0);
-		hparser_push_scope(ctx, parser);
-		parser->scope_spans[0].start = 0; // checks the `stbds_arrpush(proc.locals, ident);` is already pushed soo??
-		parser->scope_spans[0].end = scratch_buf_args_len;
-
 		if (parser->tok.type == HTOK_OBRACE) {
 			// body
 			u32 cfg_c = hparser_new_cfg_node(ctx, parser);
@@ -561,11 +602,10 @@ static void hparser_fn_stmt(hcc_ctx_t *ctx, hparser_t *parser) {
 		} else {
 			hcc_err_with_pos(ctx, parser->tok, "unexpected `%s`, expected `{` or `;`", htok_name(parser->tok.type));
 		}
-
-		hparser_pop_scope(ctx, parser);
 	} else {
 		assert(0 && "TODO: must need body for now");
 	}
+	hparser_pop_scope(ctx, parser);
 }
 
 static void hparser_top_stmt(hcc_ctx_t *ctx, hparser_t *parser) {

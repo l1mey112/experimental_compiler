@@ -9,7 +9,9 @@ void _hproc_ast_dump(hcc_ctx_t *ctx, u32 ast) {
 retry:;
 	hast_node_t *p = hcc_ast_node(ctx, ast);
 
-	switch (p->type) {
+	//printf("e:%u\n", p->children[0]);
+
+	switch (p->kind) {
 		case HAST_STMT_EXPR: {
 			ast = p->children[0];
 			goto retry;
@@ -18,7 +20,7 @@ retry:;
 			printf("%.*s", (int)p->token.len, p->token.p);
 			if (p->d_ident.idx != (u32)-1) {
 				if (p->d_ident.is_local) {
-					printf("<local:%u>", p->d_ident.idx);
+					printf(".%u", p->d_ident.idx);
 				} else {
 					assert(0 && "TODO: only locals");
 				}
