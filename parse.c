@@ -171,7 +171,7 @@ static void hparser_push_scope(hcc_ctx_t *ctx, hparser_t *parser) {
 	if (parser->scope_spans_len >= ARRAYSIZE(parser->scope_spans)) {
 		hcc_err(ctx, "indentations higher than 128? what is wrong with you?");
 	}
-	u32 start = stbds_arrlenu(ctx->current_proc);
+	u32 start = stbds_arrlenu(ctx->current_proc->locals);
 	parser->scope_spans[parser->scope_spans_len].start = start;
 	parser->scope_spans[parser->scope_spans_len].end = start;
 	parser->scope_spans_len++;
@@ -547,6 +547,7 @@ static void hparser_fn_stmt(hcc_ctx_t *ctx, hparser_t *parser) {
 	if (parser->peek.type != HTOK_EOF) {
 		assert(parser->scope_spans_len == 0);
 		hparser_push_scope(ctx, parser);
+		parser->scope_spans[0].start = 0; // checks the `stbds_arrpush(proc.locals, ident);` is already pushed soo??
 		parser->scope_spans[0].end = scratch_buf_args_len;
 
 		if (parser->tok.type == HTOK_OBRACE) {

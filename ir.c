@@ -16,6 +16,13 @@ retry:;
 		}
 		case HAST_EXPR_IDENT: {
 			printf("%.*s", (int)p->token.len, p->token.p);
+			if (p->d_ident.idx != (u32)-1) {
+				if (p->d_ident.is_local) {
+					printf("<local:%u>", p->d_ident.idx);
+				} else {
+					assert(0 && "TODO: only locals");
+				}
+			}
 			break;
 		}
 		case HAST_EXPR_LITERAL_INT: {
