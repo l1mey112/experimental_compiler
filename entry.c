@@ -1,48 +1,30 @@
-#include <stdio.h>
-#include <setjmp.h>
+#include "all.h"
+#include <assert.h>
+#include <errno.h>
+#include <string.h>
 
-#include "hasc.h"
-#include "hir.h"
-#include "tok.h"
-#include "parse.h"
+#define STB_DS_IMPLEMENTATION
 #include "stb_ds.h"
-#include "type.h"
 
-const char* __asan_default_options() { return "detect_leaks=0"; }
+int main(int argc, const char *argv[]) {
+	for (int i = 1; i < argc; i++) {
+		const char *p = argv[i];
+		
+		if (p[0] == '-') {
+			assert(0 && "TODO: flags not implemented yet");
+		}
 
-int main(void) {
-	hparser_t parser = {};
-	hcc_ctx_t ctx = {};
+		rfile_t handle;
 
-	const char *work =
-		"fn test(a: i32): i32 {\n"
-		"    b: i32\n"
-		"    b = 23\n"
-		"    return b\n"
-		"}";
+		FILE *f = fopen(p, "r");
 
-	// -(10 + 2) + a
+		if (!file_slurp(f, p, &handle)) {
+			eprintf("error: failed to read file '%s' - %s\n", p, strerror(errno));
+			return 1;
+		}
 
-	printf("%s\n", work);
-	hparser_init(&ctx, &parser, (u8 *)work, strlen(work));
-
-	if (setjmp(ctx.err_buf) == 0) {
-		hparser_run(&ctx, &parser);
-		printf("passed!\n");
-	} else {
-		puts(ctx.err_msg);
-		printf("nope!\n");
-		return 1;
+		// TODO: parse file
 	}
 
-	printf("------------ type_table(%lu): ------------\n", stbds_arrlenu(ctx.type_table));
-	for (int i = 0; i < stbds_arrlen(ctx.type_table); i++) {
-		printf("typeinfo(%d): ", i);
-		htable_type_dump(&ctx, i + _HT_CONCRETE_MAX);
-	}
-	printf("------------ procs(%lu): ------------\n", stbds_arrlenu(ctx.procs));
-	for (int i = 0; i < stbds_arrlen(ctx.procs); i++) {
-		hproc_t *proc = &ctx.procs[i];
-		hproc_dump(&ctx, proc);
-	}
+	return 0;
 }
