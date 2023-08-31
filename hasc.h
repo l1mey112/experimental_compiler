@@ -2,7 +2,7 @@
 
 #include "shared.h"
 #include "parse.h"
-#include "ir.h"
+#include "hir.h"
 #include "type.h"
 
 #include <setjmp.h>

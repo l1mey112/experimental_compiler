@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ir.h"
+#include "hir.h"
 #include "tok.h"
 
 typedef struct hparser_t hparser_t;

@@ -19,12 +19,17 @@ enum htok_t {
     #undef X
 };
 
+struct hloc_t {
+	u32 line_nr
+	u32 col
+	u32 pos
+	u16 len
+	u16 file
+}
+
 struct htoken_t {
 	htok_t type;
-	u32 row;
-	u32 col;
-	u32 len;
-	u8 *p;
+	hloc_t loc;
 };
 
 #define HTOK_IS_PREFIX(t) \

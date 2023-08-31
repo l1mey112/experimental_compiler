@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "ir.h"
+#include "hir.h"
 #include "parse.h"
 #include "hasc.h"
 #include "tok.h"

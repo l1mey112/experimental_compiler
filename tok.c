@@ -11,7 +11,9 @@ const char *htok_name(htok_t tok) {
 	return "unknown token";
 }
 
+// use ctx to locate file entry
 void htoken_dump(htoken_t token) {
-	printf("%u:%u:\t", token.row, token.col);
-	printf("'%.*s' - %s\n", token.len, token.p, htok_name(token.type));
+	assert_not_reached();
+	// printf("%u:%u:\t", token.loc.line_nr, token.loc.col);
+	// printf("'%.*s' - %s\n", token.loc.len, token.loc.p, htok_name(token.type));
 }

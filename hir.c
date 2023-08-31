@@ -1,7 +1,7 @@
 #include <stdio.h>
 
 #include "hasc.h"
-#include "ir.h"
+#include "hir.h"
 #include "shared.h"
 #include "type.h"
 

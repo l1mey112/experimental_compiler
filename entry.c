@@ -2,7 +2,7 @@
 #include <setjmp.h>
 
 #include "hasc.h"
-#include "ir.h"
+#include "hir.h"
 #include "tok.h"
 #include "parse.h"
 #include "stb_ds.h"
