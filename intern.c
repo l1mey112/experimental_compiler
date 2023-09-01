@@ -17,7 +17,7 @@ static char *sv_to_cstring(u8 *str, size_t len) {
 	return result;
 }
 
-rstr_t intern_sv(u8 *sv, size_t len) {
+rstr_t sv_intern(u8 *sv, size_t len) {
 	char *str = sv_to_cstring(sv, len);
 
 	if (interns == NULL) {
@@ -36,7 +36,7 @@ rstr_t intern_sv(u8 *sv, size_t len) {
 	return (u32)result;
 }
 
-const char *intern_from(rstr_t str) {
+const char *sv_from(rstr_t str) {
 	assert(str >= 0 && str < shlen(interns));
 	return interns[str].key;
 }

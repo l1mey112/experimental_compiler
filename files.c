@@ -7,7 +7,7 @@
 #include <unistd.h>
 
 // it's okay to leak a little on err conditions...
-const char* __asan_default_options() { return "detect_leaks=0"; }
+const char* __asan_default_options(void) { return "detect_leaks=0"; }
 
 size_t file_entry_count;
 file_entry_t file_entries[256];

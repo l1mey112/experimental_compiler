@@ -6,6 +6,7 @@
 #include <stdbool.h>
 #include <assert.h>
 #include <setjmp.h>
+#include <string.h>
 
 typedef uint8_t u8;
 typedef uint16_t u16;
@@ -29,6 +30,15 @@ typedef double f64;
 #define MAYBE_UNUSED __attribute__((unused))
 #define ARRAYLEN(v) ((u32)(sizeof(v) / sizeof(*(v))))
 
+static inline bool sv_cmp(u8 *a, size_t alen, u8 *b, size_t blen) {
+	if (alen != blen) {
+		return false;
+	}
+	return memcmp(a, b, alen) == 0;
+}
+
+#define sv_cmp_literal(a, alen, b) sv_cmp(a, alen, (u8 *)b, sizeof(b "") - 1)
+
 typedef u32 rstr_t;
 typedef u16 rfile_t;
 typedef struct token_t token_t;
@@ -37,8 +47,8 @@ typedef struct file_entry_t file_entry_t;
 typedef struct err_diag_t err_diag_t;
 typedef enum tok_t tok_t;
 
-rstr_t intern_sv(u8 *sv, size_t len);
-const char *intern_from(rstr_t str);
+rstr_t sv_intern(u8 *sv, size_t len);
+const char *sv_from(rstr_t str);
 
 bool file_slurp(FILE* file, const char *fp, rfile_t *handle);
 void file_parse(rfile_t file);
@@ -68,6 +78,12 @@ struct err_diag_t {
 extern size_t file_entry_count;
 extern file_entry_t file_entries[256];
 extern err_diag_t err_diag;
+
+void err_with_pos(loc_t loc, const char *fmt, ...)
+	__attribute__((format(printf, 2, 3))) __attribute__ ((__noreturn__));
+
+void err_without_pos(const char *fmt, ...)
+	__attribute__((format(printf, 1, 2))) __attribute__ ((__noreturn__));
 
 #define TOK_X_KEYWORDS_LIST \
 	X(TOK_FN, "fn") \
@@ -117,15 +133,19 @@ extern err_diag_t err_diag;
 	X(TOK_COLON, ":") \
 	X(TOK_QUESTION, "?")
 
+#define TOK_HAS_LIT(t) \
+	((t) == TOK_IDENT || \
+	(t) == TOK_INTEGER)
+
 #define TOK_IS_PREFIX(t) \
-	(t) == TOK_SUB || \
+	((t) == TOK_SUB || \
 	(t) == TOK_NOT || \
 	(t) == TOK_TILDE || \
 	(t) == TOK_MUL || \
-	(t) == TOK_BAND
+	(t) == TOK_BAND)
 
 #define TOK_IS_INFIX(t) \
-	(t) == TOK_ADD || \
+	((t) == TOK_ADD || \
 	(t) == TOK_SUB || \
 	(t) == TOK_MUL || \
 	(t) == TOK_DIV || \
@@ -151,7 +171,7 @@ extern err_diag_t err_diag;
 	(t) == TOK_RSHIFT || \
 	(t) == TOK_RUSHIFT || \
 	(t) == TOK_DOT || \
-	(t) == TOK_AS
+	(t) == TOK_AS)
 
 #define TOK_X_LIST \
 	X(TOK_UNDEFINED, "tok_undefined") \
@@ -170,6 +190,11 @@ enum tok_t {
 struct token_t {
 	tok_t type;
 	loc_t loc;
+	rstr_t lit;
 };
 
-const char *tok_str(tok_t tok);
+const char *tok_dbg_str(token_t tok);
+
+// scratch buffer for small allocations (string concatenation, etc)
+u8 *alloc_scratch(size_t size);
+void alloc_reset(u8 *p);
