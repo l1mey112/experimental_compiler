@@ -31,9 +31,11 @@ typedef double f64;
 
 typedef u32 rstr_t;
 typedef u16 rfile_t;
+typedef struct token_t token_t;
 typedef struct loc_t loc_t;
 typedef struct file_entry_t file_entry_t;
 typedef struct err_diag_t err_diag_t;
+typedef enum tok_t tok_t;
 
 rstr_t intern_sv(u8 *sv, size_t len);
 const char *intern_from(rstr_t str);
@@ -41,6 +43,7 @@ const char *intern_from(rstr_t str);
 bool file_slurp(FILE* file, const char *fp, rfile_t *handle);
 void file_parse(rfile_t file);
 
+// TODO: make smaller?
 struct loc_t {
 	u32 line_nr;
 	u32 col;
@@ -59,9 +62,114 @@ struct err_diag_t {
 	jmp_buf unwind;
 	char err_string[256];
 	// TODO: more err information
+	// loc_t err_loc;
 };
 
 extern size_t file_entry_count;
 extern file_entry_t file_entries[256];
 extern err_diag_t err_diag;
 
+#define TOK_X_KEYWORDS_LIST \
+	X(TOK_FN, "fn") \
+	X(TOK_EXTERN, "extern") \
+	X(TOK_ASM, "asm") \
+	X(TOK_AS, "as") \
+	X(TOK_RETURN, "return")
+
+#define TOK_X_OPERATOR_LIST \
+	X(TOK_ADD, "+") \
+	X(TOK_SUB, "-") \
+	X(TOK_MUL, "*") \
+	X(TOK_DIV, "/") \
+	X(TOK_MOD, "%") \
+	X(TOK_INC, "++") \
+	X(TOK_DEC, "--") \
+	X(TOK_ASSIGN, "=") \
+	X(TOK_ASSIGN_ADD, "+=") \
+	X(TOK_ASSIGN_SUB, "-=") \
+	X(TOK_ASSIGN_MUL, "*=") \
+	X(TOK_ASSIGN_DIV, "/=") \
+	X(TOK_ASSIGN_MOD, "%=") \
+	X(TOK_NOT, "!") \
+	X(TOK_EQ, "==") \
+	X(TOK_NEQ, "!=") \
+	X(TOK_LT, "<") \
+	X(TOK_GT, ">") \
+	X(TOK_LE, "<=") \
+	X(TOK_GE, ">=") \
+	X(TOK_AND, "&&") \
+	X(TOK_OR, "||") \
+	X(TOK_BAND, "&") \
+	X(TOK_BOR, "|") \
+	X(TOK_XOR, "^") \
+	X(TOK_LSHIFT, "<<") \
+	X(TOK_RSHIFT, ">>") \
+	X(TOK_RUSHIFT, ">>>") \
+	X(TOK_TILDE, "~") \
+	X(TOK_DOT, ".") \
+	X(TOK_COMMA, ",") \
+	X(TOK_OPAR, "(") \
+	X(TOK_CPAR, ")") \
+	X(TOK_OSQ, "[") \
+	X(TOK_CSQ, "]") \
+	X(TOK_OBRACE, "{") \
+	X(TOK_CBRACE, "}") \
+	X(TOK_COLON, ":") \
+	X(TOK_QUESTION, "?")
+
+#define TOK_IS_PREFIX(t) \
+	(t) == TOK_SUB || \
+	(t) == TOK_NOT || \
+	(t) == TOK_TILDE || \
+	(t) == TOK_MUL || \
+	(t) == TOK_BAND
+
+#define TOK_IS_INFIX(t) \
+	(t) == TOK_ADD || \
+	(t) == TOK_SUB || \
+	(t) == TOK_MUL || \
+	(t) == TOK_DIV || \
+	(t) == TOK_MOD || \
+	(t) == TOK_ASSIGN || \
+	(t) == TOK_ASSIGN_ADD || \
+	(t) == TOK_ASSIGN_SUB || \
+	(t) == TOK_ASSIGN_MUL || \
+	(t) == TOK_ASSIGN_DIV || \
+	(t) == TOK_ASSIGN_MOD || \
+	(t) == TOK_EQ || \
+	(t) == TOK_NEQ || \
+	(t) == TOK_LT || \
+	(t) == TOK_GT || \
+	(t) == TOK_LE || \
+	(t) == TOK_GE || \
+	(t) == TOK_AND || \
+	(t) == TOK_OR || \
+	(t) == TOK_BAND || \
+	(t) == TOK_BOR || \
+	(t) == TOK_XOR || \
+	(t) == TOK_LSHIFT || \
+	(t) == TOK_RSHIFT || \
+	(t) == TOK_RUSHIFT || \
+	(t) == TOK_DOT || \
+	(t) == TOK_AS
+
+#define TOK_X_LIST \
+	X(TOK_UNDEFINED, "tok_undefined") \
+	X(TOK_EOF, "EOF") \
+	X(TOK_IDENT, "identifier") \
+	X(TOK_INTEGER, "integer") \
+	TOK_X_KEYWORDS_LIST \
+	TOK_X_OPERATOR_LIST
+
+enum tok_t {
+    #define X(name, _) name,
+    TOK_X_LIST
+    #undef X
+};
+
+struct token_t {
+	tok_t type;
+	loc_t loc;
+};
+
+const char *tok_str(tok_t tok);
