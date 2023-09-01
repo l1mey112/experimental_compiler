@@ -1,4 +1,4 @@
-CC := gcc
+CC := clang
 CFLAGS := -Wall -Wextra -MMD -std=gnu11 -fsanitize=address
 DEBUG_FLAGS := -g
 PROD_FLAGS := -O2

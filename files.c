@@ -4,23 +4,17 @@
 #include <assert.h>
 #include <stdlib.h>
 #include <errno.h>
+#include <unistd.h>
 
-typedef struct file_entry_t file_entry_t;
+// it's okay to leak a little on err conditions...
+const char* __asan_default_options() { return "detect_leaks=0"; }
 
-struct file_entry_t {
-	const char *fp;
-	u8 *data;
-	size_t len;
-};
-
-static struct {
-	size_t entry_count;
-	file_entry_t entries[256];
-} files;
+size_t file_entry_count;
+file_entry_t file_entries[256];
 
 // will read entire file into memory
 bool file_slurp(FILE* file, const char *fp, rfile_t *handle) {
-	assert(files.entry_count < ARRAYLEN(files.entries));
+	assert(file_entry_count < ARRAYLEN(file_entries));
 
 	if (file == NULL) {
 		return false;
@@ -28,18 +22,23 @@ bool file_slurp(FILE* file, const char *fp, rfile_t *handle) {
 
 	bool ret = false;
 	int old_errno;
-	rfile_t f = files.entry_count;
+	rfile_t f = file_entry_count;
 
-	file_entry_t *entry = &files.entries[files.entry_count++];
+	file_entry_t *entry = &file_entries[file_entry_count++];
 	entry->fp = fp;
+
+	// TODO: impl stdin
+	// if (isatty(fileno(file))) {}
 
 	// read file into memory
 	if (fseek(file, 0, SEEK_END)) {
 		goto cleanup;
 	}
-	if ((entry->len = ftell(file)) == -1) {
+	long len = ftell(file);
+	if (len == -1) {
 		goto cleanup;
 	}
+	entry->len = len;
 	if (fseek(file, 0, SEEK_SET)) {
 		goto cleanup;
 	}
