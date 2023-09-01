@@ -151,7 +151,7 @@ static token_t parser_lex_next(void) {
 
 			if (0);
 			#define X(val, lit) \
-				else if (strlen(lit) == avail && memcmp(start, lit, avail) == 0) { \
+				else if (strlen(lit) <= avail && memcmp(start, lit, strlen(lit)) == 0) { \
 					token.type = val; \
 					token.loc.len = strlen(lit); \
 					parse_ctx.pc += strlen(lit); \

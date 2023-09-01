@@ -92,35 +92,36 @@ void err_without_pos(const char *fmt, ...)
 	X(TOK_AS, "as") \
 	X(TOK_RETURN, "return")
 
+// in specific order due to how operators are parsed
 #define TOK_X_OPERATOR_LIST \
-	X(TOK_ADD, "+") \
-	X(TOK_SUB, "-") \
-	X(TOK_MUL, "*") \
-	X(TOK_DIV, "/") \
-	X(TOK_MOD, "%") \
 	X(TOK_INC, "++") \
-	X(TOK_DEC, "--") \
-	X(TOK_ASSIGN, "=") \
 	X(TOK_ASSIGN_ADD, "+=") \
+	X(TOK_ADD, "+") \
 	X(TOK_ASSIGN_SUB, "-=") \
+	X(TOK_DEC, "--") \
+	X(TOK_SUB, "-") \
 	X(TOK_ASSIGN_MUL, "*=") \
+	X(TOK_MUL, "*") \
 	X(TOK_ASSIGN_DIV, "/=") \
+	X(TOK_DIV, "/") \
 	X(TOK_ASSIGN_MOD, "%=") \
-	X(TOK_NOT, "!") \
+	X(TOK_MOD, "%") \
 	X(TOK_EQ, "==") \
+	X(TOK_ASSIGN, "=") \
 	X(TOK_NEQ, "!=") \
-	X(TOK_LT, "<") \
-	X(TOK_GT, ">") \
+	X(TOK_NOT, "!") \
+	X(TOK_LSHIFT, "<<") \
+	X(TOK_RSHIFT, ">>") \
+	X(TOK_RUSHIFT, ">>>") \
 	X(TOK_LE, "<=") \
+	X(TOK_LT, "<") \
 	X(TOK_GE, ">=") \
+	X(TOK_GT, ">") \
 	X(TOK_AND, "&&") \
 	X(TOK_OR, "||") \
 	X(TOK_BAND, "&") \
 	X(TOK_BOR, "|") \
 	X(TOK_XOR, "^") \
-	X(TOK_LSHIFT, "<<") \
-	X(TOK_RSHIFT, ">>") \
-	X(TOK_RUSHIFT, ">>>") \
 	X(TOK_TILDE, "~") \
 	X(TOK_DOT, ".") \
 	X(TOK_COMMA, ",") \
