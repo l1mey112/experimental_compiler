@@ -4,9 +4,9 @@
 #include <assert.h>
 #include <stdio.h>
 
-typedef struct parse_ctx_t parse_ctx_t;
+typedef struct parser_ctx_t parser_ctx_t;
 
-struct parse_ctx_t {
+struct parser_ctx_t {
 	u8 *pstart;
 	u8 *pc;
 	u8 *pend;
@@ -55,7 +55,7 @@ const char *tok_dbg_str(token_t tok) {
 	return (const char *)p;
 }
 
-parse_ctx_t parse_ctx;
+static parser_ctx_t parser_ctx;
 
 static bool is_id_begin(u8 ch) {
     return isalpha(ch) || ch == '_';
@@ -66,35 +66,35 @@ static bool is_id(u8 ch) {
 }
 
 static token_t parser_lex_next(void) {
-	while (parse_ctx.pc < parse_ctx.pend) {
-		u8 ch = *parse_ctx.pc;
+	while (parser_ctx.pc < parser_ctx.pend) {
+		u8 ch = *parser_ctx.pc;
 
 		if (isspace(ch)) {
-			parse_ctx.pc++;
+			parser_ctx.pc++;
 			if (ch == '\n') {
-				parse_ctx.plast_nl = parse_ctx.pc;
-				parse_ctx.line_nr++;
+				parser_ctx.plast_nl = parser_ctx.pc;
+				parser_ctx.line_nr++;
 			}
 			continue;
 		}
 
 		if (is_id_begin(ch)) {
-			u8 *start = parse_ctx.pc;
+			u8 *start = parser_ctx.pc;
 
 			token_t token = {
 				.type = TOK_INTEGER,
-				.loc.line_nr = parse_ctx.line_nr,
-				.loc.col = parse_ctx.pc - parse_ctx.plast_nl,
-				.loc.file = parse_ctx.file,
-				.loc.pos = start - parse_ctx.pstart,
+				.loc.line_nr = parser_ctx.line_nr,
+				.loc.col = parser_ctx.pc - parser_ctx.plast_nl,
+				.loc.file = parser_ctx.file,
+				.loc.pos = start - parser_ctx.pstart,
 			};
 			
 			do {
-				parse_ctx.pc++;
-			} while (parse_ctx.pc < parse_ctx.pend && is_id(*parse_ctx.pc));
+				parser_ctx.pc++;
+			} while (parser_ctx.pc < parser_ctx.pend && is_id(*parser_ctx.pc));
 
 			// get length and id pointer
-			u32 len = parse_ctx.pc - start;
+			u32 len = parser_ctx.pc - start;
 			token.loc.len = len;
 
 			if (0);
@@ -109,30 +109,30 @@ static token_t parser_lex_next(void) {
 
 			return token;
 		} else if (isdigit(ch)) {
-			u8 *start = parse_ctx.pc;
+			u8 *start = parser_ctx.pc;
 
 			token_t token = {
 				.type = TOK_INTEGER,
-				.loc.line_nr = parse_ctx.line_nr,
-				.loc.col = parse_ctx.pc - parse_ctx.plast_nl,
-				.loc.file = parse_ctx.file,
-				.loc.pos = start - parse_ctx.pstart,
+				.loc.line_nr = parser_ctx.line_nr,
+				.loc.col = parser_ctx.pc - parser_ctx.plast_nl,
+				.loc.file = parser_ctx.file,
+				.loc.pos = start - parser_ctx.pstart,
 			};
 			
 			do {
-				parse_ctx.pc++;
-			} while (parse_ctx.pc < parse_ctx.pend && isdigit(*parse_ctx.pc));
+				parser_ctx.pc++;
+			} while (parser_ctx.pc < parser_ctx.pend && isdigit(*parser_ctx.pc));
 
 			// get length and id pointer
-			u32 len = parse_ctx.pc - start;
+			u32 len = parser_ctx.pc - start;
 
 			token.lit = sv_intern(start, len);
 			token.loc.len = len;
 
 			return token;
 		} else {
-			u8 *start = parse_ctx.pc;
-			size_t avail = parse_ctx.pend - parse_ctx.pc;
+			u8 *start = parser_ctx.pc;
+			size_t avail = parser_ctx.pend - parser_ctx.pc;
 
 			// the compiler optimiser would be able to optimise and
 			// spot locations of compile time known bounds to memcmp
@@ -143,10 +143,10 @@ static token_t parser_lex_next(void) {
 			// i know well that the compiler will NOT optimise this efficiently
 
 			token_t token = {
-				.loc.line_nr = parse_ctx.line_nr,
-				.loc.col = parse_ctx.pc - parse_ctx.plast_nl,
-				.loc.file = parse_ctx.file,
-				.loc.pos = start - parse_ctx.pstart,
+				.loc.line_nr = parser_ctx.line_nr,
+				.loc.col = parser_ctx.pc - parser_ctx.plast_nl,
+				.loc.file = parser_ctx.file,
+				.loc.pos = start - parser_ctx.pstart,
 			};
 
 			if (0);
@@ -154,7 +154,7 @@ static token_t parser_lex_next(void) {
 				else if (strlen(lit) <= avail && memcmp(start, lit, strlen(lit)) == 0) { \
 					token.type = val; \
 					token.loc.len = strlen(lit); \
-					parse_ctx.pc += strlen(lit); \
+					parser_ctx.pc += strlen(lit); \
 				}
 			TOK_X_OPERATOR_LIST
 			#undef X
@@ -170,33 +170,33 @@ static token_t parser_lex_next(void) {
 }
 
 static void parser_next(void) {
-	parse_ctx.tok = parse_ctx.peek;
-	parse_ctx.peek = parser_lex_next();
+	parser_ctx.tok = parser_ctx.peek;
+	parser_ctx.peek = parser_lex_next();
 }
 
 #define DEFAULT_DBG_TOK(expected) (token_t){.type = expected, .lit = (rstr_t)-1}
 
 static void parser_check(tok_t expected) {
-	if (parse_ctx.tok.type != expected) {
-		err_with_pos(parse_ctx.tok.loc, "unexpected %s, expected %s", tok_dbg_str(parse_ctx.tok), tok_dbg_str(DEFAULT_DBG_TOK(expected)));
-	} else if (parse_ctx.tok.type == TOK_EOF) {
-		err_with_pos(parse_ctx.tok.loc, "unexpected EOF, expected %s", tok_dbg_str(DEFAULT_DBG_TOK(expected)));
+	if (parser_ctx.tok.type != expected) {
+		err_with_pos(parser_ctx.tok.loc, "unexpected %s, expected %s", tok_dbg_str(parser_ctx.tok), tok_dbg_str(DEFAULT_DBG_TOK(expected)));
+	} else if (parser_ctx.tok.type == TOK_EOF) {
+		err_with_pos(parser_ctx.tok.loc, "unexpected EOF, expected %s", tok_dbg_str(DEFAULT_DBG_TOK(expected)));
 	}
 }
 
-static void hparser_expect(tok_t expected) {
-	if (parse_ctx.tok.type == expected) {
+static void parser_expect(tok_t expected) {
+	if (parser_ctx.tok.type == expected) {
 		parser_next();
-	} else if (parse_ctx.tok.type == TOK_EOF) {
-		err_with_pos(parse_ctx.tok.loc, "unexpected EOF, expected %s", tok_dbg_str(DEFAULT_DBG_TOK(expected)));
+	} else if (parser_ctx.tok.type == TOK_EOF) {
+		err_with_pos(parser_ctx.tok.loc, "unexpected EOF, expected %s", tok_dbg_str(DEFAULT_DBG_TOK(expected)));
 	} else {
-		err_with_pos(parse_ctx.tok.loc, "unexpected %s, expected %s", tok_dbg_str(parse_ctx.tok), tok_dbg_str(DEFAULT_DBG_TOK(expected)));
+		err_with_pos(parser_ctx.tok.loc, "unexpected %s, expected %s", tok_dbg_str(parser_ctx.tok), tok_dbg_str(DEFAULT_DBG_TOK(expected)));
 	}
 }
 
-static void hparser_expect_not_eof() {
-	if (parse_ctx.tok.type == TOK_EOF) {
-		err_with_pos(parse_ctx.tok.loc, "unexpected EOF");
+static void parser_expect_not_eof() {
+	if (parser_ctx.tok.type == TOK_EOF) {
+		err_with_pos(parser_ctx.tok.loc, "unexpected EOF");
 	} else {
 		parser_next();
 	}
@@ -204,10 +204,14 @@ static void hparser_expect_not_eof() {
 
 #undef DEFAULT_DBG_TOK
 
+void parser_top_stmt() {
+	
+}
+
 void file_parse(rfile_t file) {
 	file_entry_t *f = &file_entries[file];
 	
-	parse_ctx = (parse_ctx_t){
+	parser_ctx = (parser_ctx_t){
 		.file = file,
 		.pstart = f->data,
 		.pc = f->data,
@@ -219,4 +223,8 @@ void file_parse(rfile_t file) {
 	parser_next(); // tok peek
 
 	parser_check(TOK_IDENT);
+
+	while (parser_ctx.tok.type != TOK_EOF) {
+		parser_top_stmt();
+	}
 }

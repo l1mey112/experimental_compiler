@@ -37,10 +37,18 @@ static inline bool sv_cmp(u8 *a, size_t alen, u8 *b, size_t blen) {
 	return memcmp(a, b, alen) == 0;
 }
 
+static inline u32 ptrcpy(u8 *p, u8 *q, u32 len) {
+	memcpy(p, q, len);
+	return len;
+}
+
 #define sv_cmp_literal(a, alen, b) sv_cmp(a, alen, (u8 *)b, sizeof(b "") - 1)
 
 typedef u32 rstr_t;
 typedef u16 rfile_t;
+typedef u16 type_t;
+typedef struct typeinfo_t typeinfo_t;
+typedef enum typeinfo_kind_t typeinfo_kind_t;
 typedef struct token_t token_t;
 typedef struct loc_t loc_t;
 typedef struct file_entry_t file_entry_t;
@@ -88,9 +96,16 @@ void err_without_pos(const char *fmt, ...)
 #define TOK_X_KEYWORDS_LIST \
 	X(TOK_FN, "fn") \
 	X(TOK_EXTERN, "extern") \
+	X(TOK_PURE, "pure") \
 	X(TOK_ASM, "asm") \
 	X(TOK_AS, "as") \
-	X(TOK_RETURN, "return")
+	X(TOK_RETURN, "return") \
+	X(TOK_MUT, "mut") \
+	X(TOK_IF, "if") \
+	X(TOK_ELSE, "else") \
+	X(TOK_FOR, "for") \
+	X(TOK_BREAK, "break") \
+	X(TOK_CONTINUE, "continue")
 
 // in specific order due to how operators are parsed
 #define TOK_X_OPERATOR_LIST \
@@ -199,3 +214,70 @@ const char *tok_dbg_str(token_t tok);
 // scratch buffer for small allocations (string concatenation, etc)
 u8 *alloc_scratch(size_t size);
 void alloc_reset(u8 *p);
+
+#define TYPE_X_CONCRETE_LIST \
+	X(TYPE_VOID, "void") \
+	X(TYPE_I8, "i8") \
+	X(TYPE_I16, "i16") \
+	X(TYPE_I32, "i32") \
+	X(TYPE_I64, "i64") \
+	X(TYPE_ISIZE, "isize") \
+	X(TYPE_U8, "u8") \
+	X(TYPE_U16, "u16") \
+	X(TYPE_U32, "u32") \
+	X(TYPE_U64, "u64") \
+	X(TYPE_USIZE, "usize") \
+	X(TYPE_F32, "f32") \
+	X(TYPE_F64, "f64") \
+	X(TYPE_BOOL, "bool") \
+	X(TYPE_NORETURN, "noreturn")
+
+// types
+enum typeinfo_kind_t {
+	#define X(name, _) name,
+    TYPE_X_CONCRETE_LIST
+    #undef X
+	_TYPE_CONCRETE_MAX,
+	//
+	TYPE_UNKNOWN,
+	TYPE_FN,
+	TYPE_PTR,
+	// TYPE_OPTION,
+	// TYPE_ARRAY,
+	// TYPE_ENUM,
+	// TYPE_FN_PTR,
+	// TYPE_STRUCT,
+	// TYPE_FIXEDARRAY,
+};
+
+// TODO: impl scratch arena allocator for unchanging arrays
+
+struct typeinfo_t {
+	typeinfo_kind_t kind;
+
+	union {
+		struct {
+			rstr_t lit;
+		} d_unknown;
+		struct {
+			type_t *args;
+			type_t *rets;
+			u8 args_len;
+			u8 rets_len;
+		} d_fn;
+		type_t type_ref;
+	};
+
+	/* union {
+		struct {
+			bool atomic : 1;
+			bool nullable : 1;
+		};
+		u8 flags;
+	}; */
+};
+
+type_t table_new(typeinfo_t typeinfo);
+typeinfo_t *table_get(type_t type);
+type_t table_new_inc_mul(type_t type);
+const char *table_type_dbg_str(type_t type);

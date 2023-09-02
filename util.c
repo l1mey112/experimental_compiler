@@ -23,9 +23,8 @@ void err_without_pos(const char *fmt, ...) {
 	longjmp(err_diag.unwind, 1);
 }
 
-// used for string concat, doesn't need to be so big
-// sometimes the only elegant method to do such
-static u8 scratch_buf[2048];
+// used for memory that lasts forever, simple bump ptr allocator
+static u8 scratch_buf[8192];
 static u8 *scratch_p = scratch_buf;
 
 u8 *alloc_scratch(size_t size) {
