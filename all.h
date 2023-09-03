@@ -58,9 +58,11 @@ typedef enum hir_inst_kind_t hir_inst_kind_t;
 typedef struct hir_local_t hir_local_t;
 typedef struct hir_block_t hir_block_t;
 typedef struct hir_inst_t hir_inst_t;
-typedef u32 hir_rlocal;
-typedef u32 hir_rinst;
-typedef u32 hir_rblock;
+typedef u32 hir_rlocal_t;
+typedef u32 hir_rinst_t;
+typedef u32 hir_rblock_t;
+
+#define TYPE_UNRESOLVED ((type_t)-1)
 
 istr_t sv_intern(u8 *sv, size_t len);
 const char *sv_from(istr_t str);
@@ -103,7 +105,6 @@ void err_without_pos(const char *fmt, ...)
 #define TOK_X_KEYWORDS_LIST \
 	X(TOK_FN, "fn") \
 	X(TOK_EXTERN, "extern") \
-	X(TOK_PURE, "pure") \
 	X(TOK_ASM, "asm") \
 	X(TOK_AS, "as") \
 	X(TOK_RETURN, "return") \
@@ -211,12 +212,13 @@ enum tok_t {
 };
 
 struct token_t {
-	tok_t type;
+	tok_t type; // TODO: this should be `kind` instead, types are types.
 	loc_t loc;
 	istr_t lit;
 };
 
 const char *tok_dbg_str(token_t tok);
+const char *tok_literal_representation(tok_t tok);
 
 // scratch buffer for small allocations (string concatenation, etc)
 u8 *alloc_scratch(size_t size);
@@ -302,7 +304,7 @@ struct hir_local_t {
 	type_t type;
 	loc_t type_loc;
 	bool is_arg;
-	hir_rinst inst;
+	hir_rinst_t inst;
 };
 
 struct hir_proc_t {
@@ -311,60 +313,71 @@ struct hir_proc_t {
 	type_t type;
 	u16 args;
 	u16 rets;
-	hir_rblock entry;
+	hir_rblock_t entry;
 	hir_local_t *locals;
 	hir_block_t *blocks;
 	hir_inst_t *insts;
-	bool is_pure;
 	bool is_extern;
 };
 
 struct hir_block_t {
-	hir_rblock id;
-	hir_rinst first;
+	hir_rblock_t id;
+	hir_rinst_t first;
 	u32 len;
 };
 
 enum hir_inst_kind_t {
 	HIR_ARG,
+	HIR_LOCAL,
 	HIR_LOCAL_GET,
 	HIR_LOCAL_SET,
 	HIR_LOCAL_REF,
+	HIR_SYM_GET,
+	HIR_SYM_SET,
+	HIR_INTEGER_LITERAL,
 	HIR_COPY,
 	HIR_PHI,
 	HIR_CALL,
 	HIR_JMP,
 	HIR_RET,
-	HIR_OP1,
-	HIR_OP2,
+	HIR_PREFIX,
+	HIR_INFIX,
 };
 
 struct hir_inst_t {
 	hir_inst_kind_t kind;
-	hir_rinst id;
+	hir_rinst_t id;
 	loc_t loc;
 	type_t type; // -1 for none, TYPE_UNKNOWN is something else
 	
 	union {
 		struct {
 			u16 local;
-		} d_arg;
+		} d_local;
 		struct {
 			u16 local;
-		} d_local_get;
-		struct {
-			u16 local;
-			hir_rinst src;
+			hir_rinst_t src;
 		} d_local_set;
 		struct {
 			tok_t op;
-			hir_rinst lhs;
-		} d_op1;
+			hir_rinst_t val;
+		} d_prefix;
 		struct {
 			tok_t op;
-			hir_rinst rhs;
-			hir_rinst lhs;
-		} d_op2;
+			hir_rinst_t rhs;
+			hir_rinst_t lhs;
+		} d_infix;
+		struct {
+			istr_t lit;
+		} d_sym;
+		struct {
+			istr_t lit;
+			hir_rinst_t src;
+		} d_sym_set;
+		struct {
+			istr_t lit;
+			bool negate;
+		} d_literal;
 		/* struct {
 		} d_phi; */
 	};

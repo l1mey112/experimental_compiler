@@ -42,21 +42,38 @@ void alloc_reset(u8 *p) {
 	scratch_p = p;
 }
 
+// TODO: insert types? if the value is `void` no need to assign
 static void _dump_inst(hir_proc_t *proc, hir_inst_t *inst) {
 	switch (inst->kind) {
 		case HIR_ARG:
-			eprintf("%%%u = arg(l%u:%s)\n", inst->id, inst->d_arg.local, sv_from(proc->locals[inst->d_arg.local].name));
+			eprintf("%%%u = arg(l%u:%s)\n", inst->id, inst->d_local.local, sv_from(proc->locals[inst->d_local.local].name));
+			break;
+		case HIR_LOCAL:
+			eprintf("%%%u = local(l%u:%s)\n", inst->id, inst->d_local.local, sv_from(proc->locals[inst->d_local.local].name));
 			break;
 		case HIR_LOCAL_GET:
+			eprintf("%%%u = local_get(%%%u)\n", inst->id, proc->locals[inst->d_local.local].inst);
+			break;
 		case HIR_LOCAL_SET:
-		case HIR_LOCAL_REF:
-		case HIR_COPY:
-		case HIR_PHI:
-		case HIR_CALL:
-		case HIR_JMP:
-		case HIR_RET:
-		case HIR_OP1:
-		case HIR_OP2:
+			eprintf("%%%u = local_set(%%%u, %%%u)\n", inst->id, proc->locals[inst->d_local.local].inst, inst->d_local_set.src);
+			break;
+		case HIR_SYM_GET:
+			eprintf("%%%u = sym_get(%s)\n", inst->id, sv_from(inst->d_sym.lit));
+			break;
+		case HIR_INTEGER_LITERAL:
+			if (inst->d_literal.negate) {
+				eprintf("%%%u = -%s\n", inst->id, sv_from(inst->d_literal.lit));
+			} else {
+				eprintf("%%%u = %s\n", inst->id, sv_from(inst->d_literal.lit));
+			}
+			break;
+		case HIR_INFIX:
+			eprintf("%%%u = %%%u %s %%%u\n", inst->id, inst->d_infix.lhs, tok_literal_representation(inst->d_infix.op), inst->d_infix.rhs);
+			break;
+		case HIR_PREFIX:
+			eprintf("%%%u = %s %%%u\n", inst->id, tok_literal_representation(inst->d_prefix.op), inst->d_prefix.val);
+			break;
+		default:
 			assert_not_reached();
 	}
 }
@@ -66,10 +83,10 @@ void dump_proc(hir_proc_t *proc) {
 
 	eprintf("%s: %s\n", sv_from(proc->name), table_type_dbg_str(proc->type));
 
-	for (hir_rblock i = 0; i < arrlenu(proc->blocks); i++) {
+	for (hir_rblock_t i = 0; i < arrlenu(proc->blocks); i++) {
 		hir_block_t *block = &proc->blocks[i];
 		eprintf("%u:\n", i);
-		for (hir_rinst j = block->first; j < block->first + block->len; j++) {
+		for (hir_rinst_t j = block->first; j < block->first + block->len; j++) {
 			hir_inst_t *inst = &proc->insts[j];
 
 			eprintf("\t");
