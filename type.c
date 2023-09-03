@@ -28,7 +28,7 @@ static bool cmp_typeinfo(typeinfo_t *a, typeinfo_t *b) {
 			}
 			return memcmp(a->d_fn.args, b->d_fn.args, a->d_fn.args_len) == 0 && memcmp(a->d_fn.rets, b->d_fn.rets, a->d_fn.rets_len) == 0;
 		default:
-		assert_not_reached();
+			assert_not_reached();
 	}
 }
 
@@ -69,8 +69,9 @@ type_t table_new_inc_mul(type_t type) {
 	return table_new(typeinfo);
 }
 
-static u32 _table_type_dbg_str(u8 *p, type_t type) {
+/* static u32 _table_type_dbg_str(u8 *p, type_t type) {
 	// good? bad? im the one with the sloppy macros
+
 	#define CPY_LIT_FR(p, lit) (memcpy(p, lit, sizeof(lit "") - 1), p += sizeof(lit "") - 1, sizeof(lit "") - 1)
 	#define CPY_LIT(lit) CPY(CPY_LIT_FR(p, lit))
 	#define CPY_CH(ch) (p[0] = ch, CPY(1))
@@ -130,13 +131,76 @@ static u32 _table_type_dbg_str(u8 *p, type_t type) {
 	#undef CPY_LIT
 	#undef CPY_CH
 	#undef CPY
+} */
+
+static u8 *p;
+
+static void _table_type_dbg_str(type_t type) {
+	#define COMMIT(expr) \
+		do { \
+			p += (expr); \
+		} while (0)
+		
+
+	if (type < _TYPE_CONCRETE_MAX) {
+		COMMIT(sprintf((char *)p, "%s", ctinfo_str[type]));			
+		return;
+	}
+
+	typeinfo_t *typeinfo = table_get(type);
+
+	switch (typeinfo->kind) {
+		case TYPE_UNKNOWN:
+			COMMIT(sprintf((char *)p, "%s", sv_from(typeinfo->d_unknown.lit)));
+			return;
+		case TYPE_PTR:
+			*p = '*', p++;
+			_table_type_dbg_str(typeinfo->type_ref);
+			return;
+		case TYPE_FN:
+			COMMIT(sprintf((char *)p, "fn ("));
+			for (u32 i = 0; i < typeinfo->d_fn.args_len; i++) {
+				type_t arg = typeinfo->d_fn.args[i];
+				_table_type_dbg_str(arg);
+				if (i + 1 < typeinfo->d_fn.args_len) {
+					COMMIT(sprintf((char *)p, ", "));
+				}
+			}
+			COMMIT(sprintf((char *)p, ")"));
+			if (typeinfo->d_fn.rets_len == 1) {
+				COMMIT(sprintf((char *)p, ": "));
+				_table_type_dbg_str(typeinfo->d_fn.rets[0]);
+			} else if (typeinfo->d_fn.rets_len > 1) {
+				COMMIT(sprintf((char *)p, ": ("));
+				for (u32 i = 0; i < typeinfo->d_fn.rets_len; i++) {
+					type_t ret = typeinfo->d_fn.rets[i];
+					_table_type_dbg_str(ret);
+					if (i + 1 < typeinfo->d_fn.rets_len) {
+						COMMIT(sprintf((char *)p, ", "));
+					}
+				}
+				COMMIT(sprintf((char *)p, ")"));
+			}
+			return;
+		default:
+			assert_not_reached();
+	}
 }
 
 // allocates using alloc_* functions
 const char *table_type_dbg_str(type_t type) {
-	u8 *p = alloc_scratch(0);
-	u32 len = _table_type_dbg_str(p, type);
-	p[len] = '\0'; // nul not guarenteed, place anyway
+	// u8 *p = alloc_scratch(0);
+	//u32 len = _table_type_dbg_str(p, type);
 
-	return (const char *)alloc_scratch(len + 1);
+	
+	p = alloc_scratch(0);
+	u8 *oldp = p;
+
+	_table_type_dbg_str(type);
+
+	u32 nwritten = p - oldp;
+
+	p[nwritten] = '\0';
+
+	return (const char *)alloc_scratch(nwritten + 1);
 }

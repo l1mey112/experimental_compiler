@@ -44,7 +44,7 @@ static inline u32 ptrcpy(u8 *p, u8 *q, u32 len) {
 
 #define sv_cmp_literal(a, alen, b) sv_cmp(a, alen, (u8 *)b, sizeof(b "") - 1)
 
-typedef u32 rstr_t;
+typedef u32 istr_t;
 typedef u16 rfile_t;
 typedef u16 type_t;
 typedef struct typeinfo_t typeinfo_t;
@@ -54,9 +54,16 @@ typedef struct loc_t loc_t;
 typedef struct file_entry_t file_entry_t;
 typedef struct err_diag_t err_diag_t;
 typedef enum tok_t tok_t;
+typedef enum hir_inst_kind_t hir_inst_kind_t;
+typedef struct hir_local_t hir_local_t;
+typedef struct hir_block_t hir_block_t;
+typedef struct hir_inst_t hir_inst_t;
+typedef u32 hir_rlocal;
+typedef u32 hir_rinst;
+typedef u32 hir_rblock;
 
-rstr_t sv_intern(u8 *sv, size_t len);
-const char *sv_from(rstr_t str);
+istr_t sv_intern(u8 *sv, size_t len);
+const char *sv_from(istr_t str);
 
 bool file_slurp(FILE* file, const char *fp, rfile_t *handle);
 void file_parse(rfile_t file);
@@ -206,7 +213,7 @@ enum tok_t {
 struct token_t {
 	tok_t type;
 	loc_t loc;
-	rstr_t lit;
+	istr_t lit;
 };
 
 const char *tok_dbg_str(token_t tok);
@@ -250,14 +257,15 @@ enum typeinfo_kind_t {
 	// TYPE_FIXEDARRAY,
 };
 
-// TODO: impl scratch arena allocator for unchanging arrays
+// will be filled from main()
+extern istr_t typeinfo_concrete_istr[_TYPE_CONCRETE_MAX];
 
 struct typeinfo_t {
 	typeinfo_kind_t kind;
 
 	union {
 		struct {
-			rstr_t lit;
+			istr_t lit;
 		} d_unknown;
 		struct {
 			type_t *args;
@@ -281,3 +289,89 @@ type_t table_new(typeinfo_t typeinfo);
 typeinfo_t *table_get(type_t type);
 type_t table_new_inc_mul(type_t type);
 const char *table_type_dbg_str(type_t type);
+
+// TODO: discrepancy
+//       function arguments aren't locals in the normal sense, they're immutable value insts
+//       their address (COULD?) be taken??
+//       okay, fuck! their address is taken.
+//       variables should be declared using new var to take part in liveness too
+
+struct hir_local_t {
+	istr_t name;
+	loc_t name_loc;
+	type_t type;
+	loc_t type_loc;
+	bool is_arg;
+	hir_rinst inst;
+};
+
+struct hir_proc_t {
+	istr_t name;
+	loc_t name_loc;
+	type_t type;
+	u16 args;
+	u16 rets;
+	hir_rblock entry;
+	hir_local_t *locals;
+	hir_block_t *blocks;
+	hir_inst_t *insts;
+	bool is_pure;
+	bool is_extern;
+};
+
+struct hir_block_t {
+	hir_rblock id;
+	hir_rinst first;
+	u32 len;
+};
+
+enum hir_inst_kind_t {
+	HIR_ARG,
+	HIR_LOCAL_GET,
+	HIR_LOCAL_SET,
+	HIR_LOCAL_REF,
+	HIR_COPY,
+	HIR_PHI,
+	HIR_CALL,
+	HIR_JMP,
+	HIR_RET,
+	HIR_OP1,
+	HIR_OP2,
+};
+
+struct hir_inst_t {
+	hir_inst_kind_t kind;
+	hir_rinst id;
+	loc_t loc;
+	type_t type; // -1 for none, TYPE_UNKNOWN is something else
+	
+	union {
+		struct {
+			u16 local;
+		} d_arg;
+		struct {
+			u16 local;
+		} d_local_get;
+		struct {
+			u16 local;
+			hir_rinst src;
+		} d_local_set;
+		struct {
+			tok_t op;
+			hir_rinst lhs;
+		} d_op1;
+		struct {
+			tok_t op;
+			hir_rinst rhs;
+			hir_rinst lhs;
+		} d_op2;
+		/* struct {
+		} d_phi; */
+	};
+};
+
+typedef struct hir_inst_t hir_inst_t;
+typedef struct hir_proc_t hir_proc_t;
+typedef enum hir_inst_kind_t hir_inst_kind_t;
+
+void dump_proc(hir_proc_t *proc);
