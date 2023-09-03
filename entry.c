@@ -44,6 +44,12 @@ int main(int argc, const char *argv[]) {
 		#undef X
 	}
 
+	// TODO: implement multi errors, but one per file.
+	//       move `setjmp` inside the loop and allow it to continue on.
+	//
+	//       when we do modules, implement as a big queue of files.
+	//       regardless, this still applies.
+
 	if (!setjmp(err_diag.unwind)) {
 		for (rfile_t i = 0; i < file_entry_count; i++) {
 			file_parse(i);

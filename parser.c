@@ -796,7 +796,7 @@ void parser_stmt() {
 		hir_rinst_t inst = parser_new_inst((hir_inst_t){
 			.kind = HIR_LOCAL,
 			.loc = name_loc,
-			.type = TYPE_VOID, // TODO: unnecessary? it should be a pointer? idk..
+			.type = type, // TODO: unnecessary? it should be a pointer? idk..
 			.d_local.local = id,
 		});
 		parser_new_local((hir_local_t){
@@ -919,7 +919,7 @@ fparsed:
 		arg.inst = parser_new_inst((hir_inst_t){
 			.kind = HIR_ARG,
 			.loc = arg_loc,
-			.type = TYPE_VOID, // TODO: see HIR_LOCAL too. is a type necessary?
+			.type = type, // TODO: see HIR_LOCAL too. is a type necessary?
 			.d_local.local = args,
 		});
 		// will be added to scope stack

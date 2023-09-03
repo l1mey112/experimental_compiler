@@ -44,34 +44,39 @@ void alloc_reset(u8 *p) {
 
 // TODO: insert types? if the value is `void` no need to assign
 static void _dump_inst(hir_proc_t *proc, hir_inst_t *inst) {
+	if (inst->type == TYPE_VOID) {
+		eprintf("     = ");
+	} else {
+		eprintf("%%%-3u = ", inst->id);
+	}
 	switch (inst->kind) {
 		case HIR_ARG:
-			eprintf("%%%u = arg(l%u:%s)\n", inst->id, inst->d_local.local, sv_from(proc->locals[inst->d_local.local].name));
+			eprintf("arg(l%u:%s)\n", inst->d_local.local, sv_from(proc->locals[inst->d_local.local].name));
 			break;
 		case HIR_LOCAL:
-			eprintf("%%%u = local(l%u:%s)\n", inst->id, inst->d_local.local, sv_from(proc->locals[inst->d_local.local].name));
+			eprintf("local(l%u:%s)\n", inst->d_local.local, sv_from(proc->locals[inst->d_local.local].name));
 			break;
 		case HIR_LOCAL_GET:
-			eprintf("%%%u = local_get(%%%u)\n", inst->id, proc->locals[inst->d_local.local].inst);
+			eprintf("local_get(%%%u)\n", proc->locals[inst->d_local.local].inst);
 			break;
 		case HIR_LOCAL_SET:
-			eprintf("%%%u = local_set(%%%u, %%%u)\n", inst->id, proc->locals[inst->d_local.local].inst, inst->d_local_set.src);
+			eprintf("local_set(%%%u, %%%u)\n", proc->locals[inst->d_local.local].inst, inst->d_local_set.src);
 			break;
 		case HIR_SYM_GET:
-			eprintf("%%%u = sym_get(%s)\n", inst->id, sv_from(inst->d_sym.lit));
+			eprintf("sym_get(%s)\n", sv_from(inst->d_sym.lit));
 			break;
 		case HIR_INTEGER_LITERAL:
 			if (inst->d_literal.negate) {
-				eprintf("%%%u = -%s\n", inst->id, sv_from(inst->d_literal.lit));
+				eprintf("-%s\n", sv_from(inst->d_literal.lit));
 			} else {
-				eprintf("%%%u = %s\n", inst->id, sv_from(inst->d_literal.lit));
+				eprintf("%s\n", sv_from(inst->d_literal.lit));
 			}
 			break;
 		case HIR_INFIX:
-			eprintf("%%%u = %%%u %s %%%u\n", inst->id, inst->d_infix.lhs, tok_literal_representation(inst->d_infix.op), inst->d_infix.rhs);
+			eprintf("%%%u %s %%%u\n", inst->d_infix.lhs, tok_literal_representation(inst->d_infix.op), inst->d_infix.rhs);
 			break;
 		case HIR_PREFIX:
-			eprintf("%%%u = %s %%%u\n", inst->id, tok_literal_representation(inst->d_prefix.op), inst->d_prefix.val);
+			eprintf("%s %%%u\n", tok_literal_representation(inst->d_prefix.op), inst->d_prefix.val);
 			break;
 		default:
 			assert_not_reached();
