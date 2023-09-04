@@ -333,6 +333,7 @@ struct hir_block_t {
 };
 
 enum hir_inst_kind_t {
+	HIR_NOP,
 	HIR_ARG,
 	HIR_LOCAL,
 	HIR_LOCAL_GET,

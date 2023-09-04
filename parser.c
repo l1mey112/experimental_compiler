@@ -20,13 +20,14 @@ enum parser_value_type_t {
 };
 
 enum parser_value_inst_flags_t {
-	// if (a = 20) <-- error: assignment in condition
 	// a = 230     <-- safe to remove
 	// a()         <-- safe to remove
 	// see: vemit_garbage()
-	VAL_INST_FLAGS_RESULT_FROM_ASSIGN = 1 << 0,
+	VAL_INST_FLAGS_RESULT_SAFE_DISCARD = 1 << 0,
+	// if (a = 20) <-- error: assignment in condition
+	// VAL_INST_FLAGS_RESULT_FROM_ASSIGN = 1 << 1,
 	// a || b && c <-- error: abiguous precedence
-	// VAL_INST_FLAGS_RESULT_NOT_FROM_BRACES = 1 << 1,
+	// VAL_INST_FLAGS_RESULT_NOT_FROM_BRACES = 1 << 2,
 };
 
 struct parser_value_t {
@@ -532,11 +533,12 @@ void vdelete_inst(hir_rinst_t inst) {
 	// TODO: should this even be reached?
 	//       in most cases we should be able to just pop the top
 	//       in other cases, it isn't really the parsers job...
-	assert(0 && "TODO: implement NOPs");
+	// assert(0 && "TODO: implement NOPs");
+	parser_ctx.cproc.insts[inst].type = HIR_NOP;
 }
 
 void vemit_garbage(parser_value_t value) {
-	// explanation of: VAL_INST_FLAGS_RESULT_FROM_ASSIGN
+	// explanation of: VAL_INST_FLAGS_RESULT_SAFE_DISCARD
 	//
 	// resulting values from an expression statements will always be written out.
 	// the checker will check for these dangling statements and error out if the
@@ -554,9 +556,9 @@ void vemit_garbage(parser_value_t value) {
 	// --- x = 2       // <-- no error
 	// --- (x = 2) + 1 // <-- error on the `+ 1` part
 	//
-	// note: `x = 2` -> `(x = 2, x)` where `, x)` is an VAL_INST with VAL_INST_FLAGS_RESULT_FROM_ASSIGN set.
+	// note: `x = 2` -> `(x = 2, x)` where `, x)` is an VAL_INST with VAL_INST_FLAGS_RESULT_SAFE_DISCARD set.
 
-	if (value.kind == VAL_INST && value.d_inst.flags & VAL_INST_FLAGS_RESULT_FROM_ASSIGN) {
+	if (value.kind == VAL_INST && value.d_inst.flags & VAL_INST_FLAGS_RESULT_SAFE_DISCARD) {
 		// we won't emit, but the load (assign expressions) has already taken place...
 		vdelete_inst(value.d_inst.inst);
 		return;
@@ -616,6 +618,16 @@ void vpush_inst_flags(hir_rinst_t inst, loc_t loc, parser_value_inst_flags_t fla
 	};
 }
 
+// vpop() then vpush()
+void vpush_inst_back(hir_rinst_t inst) {
+	vpush_inst_flags(inst, parser_ctx.cproc.insts[inst].loc, 0);
+}
+
+// vpop() then vpush()
+void vpush_inst_back_flags(hir_rinst_t inst, parser_value_inst_flags_t flags) {
+	vpush_inst_flags(inst, parser_ctx.cproc.insts[inst].loc, flags);
+}
+
 void vpush_inst(hir_rinst_t inst, loc_t loc) {
 	vpush_inst_flags(inst, loc, 0);
 }
@@ -664,7 +676,7 @@ void vinfix(tok_t tok, loc_t loc) {
 		// but must be reloaded for use in further expressions
 		vsym_set(irhs, lhs, loc);
 		inst = vsym_get(lhs, &loc);
-		vpush_inst_flags(inst, loc, VAL_INST_FLAGS_RESULT_FROM_ASSIGN);
+		vpush_inst_flags(inst, loc, VAL_INST_FLAGS_RESULT_SAFE_DISCARD);
 	}
 }
 
@@ -747,6 +759,31 @@ void parser_expr(u8 prec) {
 				parser_next();
 				vcast(parser_parse_type(), parser_ctx.tok.loc);
 				break;
+			case TOK_INC:
+			case TOK_DEC:
+				parser_next();
+				parser_value_t sym = vpop();
+				hir_rinst_t oval = vemit(sym);
+
+				if (sym.kind != VAL_SYM) {
+					err_with_pos(sym.loc, "lhs of assignment must be an lvalue");
+					return;
+				}
+
+				vpush_inst_back(oval);
+				vpush_ilit(sv_intern((u8*)"1", 1), token.loc, false);
+				vinfix(token.type == TOK_INC ? TOK_ADD : TOK_SUB, token.loc);
+				hir_rinst_t result = vemit(vpop());
+				vsym_set(result, sym, token.loc);
+
+				// %0 = sym
+				// %1 = %0 + 1
+				//      store(%0, %1)
+				// << %0
+				vpush_inst_back_flags(oval, VAL_INST_FLAGS_RESULT_SAFE_DISCARD);
+				// vsym_set(irhs, lhs, loc);
+				// inst = vsym_get(lhs, &loc);
+				// vpush_inst_flags(inst, loc, VAL_INST_FLAGS_RESULT_SAFE_DISCARD);
 			default:
 				if (TOK_IS_INFIX(token.type)) {
 					u8 prec = parser_tok_precedence(token.type);
