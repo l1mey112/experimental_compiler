@@ -20,10 +20,9 @@ enum parser_value_type_t {
 };
 
 enum parser_value_inst_flags_t {
-	// a = 230     <-- safe to remove
-	// a()         <-- safe to remove
+	// a = 230     <-- safe to remove duplicate load
 	// see: vemit_garbage()
-	VAL_INST_FLAGS_RESULT_SAFE_DISCARD = 1 << 0,
+	VAL_INST_FLAGS_RESULT_SAFE_DELETE = 1 << 0,
 	// if (a = 20) <-- error: assignment in condition
 	// VAL_INST_FLAGS_RESULT_FROM_ASSIGN = 1 << 1,
 	// a || b && c <-- error: abiguous precedence
@@ -539,27 +538,7 @@ void vdelete_inst(hir_rinst_t inst) {
 }
 
 void vemit_garbage(parser_value_t value) {
-	// explanation of: VAL_INST_FLAGS_RESULT_SAFE_DISCARD
-	//
-	// resulting values from an expression statements will always be written out.
-	// the checker will check for these dangling statements and error out if the
-	// instruction expression chain is pure.
-	//
-	// --- x + 2 // <-- error
-	// --- x()   // <-- if `x` is 'pure, error
-	// --- 2	 // <-- error
-	//
-	// assignment expressions are not pure, but they do result in a value.
-	// we don't want to write them out as a garbage instruction for the
-	// checker to identify and remove, we already know it's the result of
-	// an assignment expression and can be omitted here.
-	//
-	// --- x = 2       // <-- no error
-	// --- (x = 2) + 1 // <-- error on the `+ 1` part
-	//
-	// note: `x = 2` -> `(x = 2, x)` where `, x)` is an VAL_INST with VAL_INST_FLAGS_RESULT_SAFE_DISCARD set.
-
-	// remember the use of `VAL_INST_FLAGS_RESULT_SAFE_DISCARD` should be done to
+	// remember the use of `VAL_INST_FLAGS_RESULT_SAFE_DELETE` should be done to
 	// remove instructions that are essentially, junk.
 	// take a v++ expression:
 	// 
@@ -571,13 +550,15 @@ void vemit_garbage(parser_value_t value) {
 	// it's okay to pop off `%0` from the stack and ignore it.
 	// extra loads weren't generated for no reason.
 
-	if (value.kind == VAL_INST && value.d_inst.flags & VAL_INST_FLAGS_RESULT_SAFE_DISCARD) {
+	assert(!(value.d_inst.flags & VAL_INST_FLAGS_RESULT_SAFE_DELETE) && "DEPRCATED: ensure you have a very very good reason to use this");
+
+	if (value.kind == VAL_INST && value.d_inst.flags & VAL_INST_FLAGS_RESULT_SAFE_DELETE) {
 		// we won't emit, but the load (assign expressions) has already taken place...
 		vdelete_inst(value.d_inst.inst);
 		return;
 	}
 
-	vemit(value);
+	(void)vemit(value);
 }
 
 void vpush_ilit(istr_t lit, loc_t loc, bool negate) {
@@ -688,8 +669,7 @@ void vinfix(tok_t tok, loc_t loc) {
 		// assign expressions do actually return the value
 		// but must be reloaded for use in further expressions
 		vsym_set(irhs, lhs, loc);
-		inst = vsym_get(lhs, &loc);
-		vpush_inst_flags(inst, loc, VAL_INST_FLAGS_RESULT_SAFE_DISCARD);
+		vpush_inst(irhs, loc);
 	}
 }
 
