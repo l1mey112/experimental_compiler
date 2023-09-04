@@ -43,6 +43,14 @@ void alloc_reset(u8 *p) {
 	scratch_p = p;
 }
 
+#define LINE_LEN_PADDING 30
+
+static void _padding_to_size(u32 line_len) {
+	if (line_len < LINE_LEN_PADDING) {
+		eprintf("%*c", LINE_LEN_PADDING - line_len, ' ');
+	}
+}
+
 // TODO: insert types? if the value is `void` no need to assign
 static void _dump_inst(hir_proc_t *proc, hir_inst_t *inst) {
 	/* if (inst->type == TYPE_VOID) {
@@ -50,22 +58,38 @@ static void _dump_inst(hir_proc_t *proc, hir_inst_t *inst) {
 	} else {
 		eprintf("%%%-3u = ", inst->id);
 	} */
-	eprintf("%%%u = ", inst->id);
+	u32 line_len = 0;
+	line_len += eprintf("%%%u = ", inst->id);
 	switch (inst->kind) {
 		case HIR_ARG:
-			eprintf("arg(l%u:%s)\n", inst->d_local.local, sv_from(proc->locals[inst->d_local.local].name));
+			eprintf("arg(%%%u:%s)\n", inst->d_local.local, sv_from(proc->locals[inst->d_local.local].name));
 			break;
-		case HIR_LOCAL:
-			eprintf("local(l%u:%s)\n", inst->d_local.local, sv_from(proc->locals[inst->d_local.local].name));
+		case HIR_LOCAL: {
+			hir_local_t *local = &proc->locals[inst->d_local.local];
+			line_len += eprintf("local(%%%u:%s)", inst->d_local.local, sv_from(local->name));
+			_padding_to_size(line_len);
+			eprintf("; def %s%s: %s\n", local->is_mut ? "mut " : "", sv_from(local->name), table_type_dbg_str(local->type));
 			break;
-		case HIR_LOCAL_GET:
-			eprintf("local_get(%%%u)\n", proc->locals[inst->d_local.local].inst);
+		}
+		case HIR_SYM:
+			if (inst->d_sym.resv == HIR_INST_RESOLVED_LOCAL) {
+				hir_local_t *local = &proc->locals[inst->d_sym.data.local];
+				line_len += eprintf("sym(%s)", sv_from(local->name));
+				_padding_to_size(line_len);
+				if (local->is_arg) {
+					eprintf("; arg%u %s: %s\n", local->inst, sv_from(local->name), table_type_dbg_str(local->type));
+				} else {
+					eprintf("; %s%s: %s\n", local->is_mut ? "mut " : "", sv_from(local->name), table_type_dbg_str(local->type));
+				}
+			} else {
+				eprintf("sym(%s)\n", sv_from(inst->d_sym.data.lit));
+			}
 			break;
-		case HIR_LOCAL_SET:
-			eprintf("local_set(%%%u, %%%u)\n", proc->locals[inst->d_local.local].inst, inst->d_local_set.src);
+		case HIR_LVALUE_LOAD:
+			eprintf("lvalue_load(%%%u)\n", inst->d_lvalue.src);
 			break;
-		case HIR_SYM_GET:
-			eprintf("sym_get(%s)\n", sv_from(inst->d_sym.lit));
+		case HIR_LVALUE_STORE:
+			eprintf("lvalue_store(%%%u, %%%u)\n", inst->d_lvalue_store.dest, inst->d_lvalue_store.src);
 			break;
 		case HIR_INTEGER_LITERAL:
 			if (inst->d_literal.negate) {
@@ -79,6 +103,16 @@ static void _dump_inst(hir_proc_t *proc, hir_inst_t *inst) {
 			break;
 		case HIR_PREFIX:
 			eprintf("%s %%%u\n", tok_literal_representation(inst->d_prefix.op), inst->d_prefix.val);
+			break;
+		case HIR_CALL:
+			eprintf("call %%%u(", inst->d_call.target);
+			for (u32 i = 0; i < inst->d_call.cc; i++) {
+				eprintf("%%%u", inst->d_call.cl[i]);
+				if (i + 1 < inst->d_call.cc) {
+					eprintf(", ");
+				}
+			}
+			eprintf(")\n");
 			break;
 		case HIR_RETURN:
 			eprintf("return");

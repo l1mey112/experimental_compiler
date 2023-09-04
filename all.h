@@ -58,6 +58,7 @@ typedef enum hir_inst_kind_t hir_inst_kind_t;
 typedef struct hir_local_t hir_local_t;
 typedef struct hir_block_t hir_block_t;
 typedef struct hir_inst_t hir_inst_t;
+typedef struct hir_inst_sym_data_t hir_inst_sym_data_t;
 typedef u32 hir_rlocal_t;
 typedef u32 hir_rinst_t;
 typedef u32 hir_rblock_t;
@@ -310,6 +311,7 @@ struct hir_local_t {
 	type_t type;
 	loc_t type_loc;
 	bool is_arg;
+	bool is_mut;
 	hir_rinst_t inst;
 };
 
@@ -332,23 +334,38 @@ struct hir_block_t {
 	u32 len;
 };
 
+// HIR_ARG   : function arguments.
+// HIR_SYM   : unresolved symbol.
+// HIR_LOCAL : resolved symbol in parsing phase, local.
+//
+// HIR_LVALUE_LOAD  : the checker will evaluate these
+// HIR_LVALUE_STORE : and lower them concretely.
+//
 enum hir_inst_kind_t {
 	HIR_NOP,
 	HIR_ARG,
 	HIR_LOCAL,
-	HIR_LOCAL_GET,
-	HIR_LOCAL_SET,
-	HIR_LOCAL_REF,
-	HIR_SYM_GET,
-	HIR_SYM_SET,
+	HIR_SYM,
+	HIR_LVALUE_LOAD,
+	HIR_LVALUE_STORE,
 	HIR_INTEGER_LITERAL,
-	HIR_COPY,
 	HIR_PHI,
 	HIR_CALL,
 	HIR_JMP,
 	HIR_RETURN,
 	HIR_PREFIX,
 	HIR_INFIX,
+};
+
+struct hir_inst_sym_data_t {
+	enum _ {
+		HIR_INST_RESOLVED_LOCAL,
+		HIR_INST_RESOLVED_NONE,
+	} resv;
+	union {
+		hir_rinst_t local;
+		istr_t lit; // TODO: rsym_t which stores the module and literal
+	} data;
 };
 
 struct hir_inst_t {
@@ -360,11 +377,15 @@ struct hir_inst_t {
 	union {
 		struct {
 			u16 local;
-		} d_local;
+		} d_local; // d_arg
+		hir_inst_sym_data_t d_sym;
 		struct {
-			u16 local;
 			hir_rinst_t src;
-		} d_local_set;
+		} d_lvalue;
+		struct {
+			hir_rinst_t dest;
+			hir_rinst_t src;
+		} d_lvalue_store;
 		struct {
 			tok_t op;
 			hir_rinst_t val;
@@ -376,19 +397,17 @@ struct hir_inst_t {
 		} d_infix;
 		struct {
 			istr_t lit;
-		} d_sym;
-		struct {
-			istr_t lit;
-			hir_rinst_t src;
-		} d_sym_set;
-		struct {
-			istr_t lit;
 			bool negate;
 		} d_literal;
 		struct {
 			hir_rinst_t *retl;
 			u8 retc;
 		} d_return;
+		struct {
+			hir_rinst_t target;
+			hir_rinst_t *cl;
+			u8 cc;
+		} d_call;
 		/* struct {
 		} d_phi; */
 	};

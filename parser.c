@@ -35,15 +35,7 @@ struct parser_value_t {
 	type_t type; // -1 for none, TYPE_UNKNOWN is something else
 
 	union {
-		struct {
-			// TODO: more flags? maybe extract this into a seperate thing
-			//       shove this inside an inst?
-			union {
-				hir_rlocal_t local;
-				istr_t lit;
-			};
-			bool resolved;
-		} d_sym;
+		hir_inst_sym_data_t d_sym;
 		struct {
 			istr_t lit;
 			bool negate;
@@ -444,7 +436,7 @@ parser_value_t vpop_bottom() {
 	return parser_ctx.es[--parser_ctx.es_len];
 }
 
-hir_rinst_t vlocal_get(hir_rlocal_t rlocal, loc_t loc) {
+/* hir_rinst_t vlocal_get(hir_rlocal_t rlocal, loc_t loc) {
 	hir_local_t *local = &parser_ctx.cproc.locals[rlocal];
 	
 	return parser_new_inst((hir_inst_t){
@@ -495,6 +487,25 @@ hir_rinst_t vsym_set(hir_rlocal_t rlocal, parser_value_t value, loc_t loc) {
 			.d_sym_set.src = rlocal,
 		});
 	}
+} */
+
+hir_rinst_t vlvalue_store(hir_rinst_t dest, hir_rinst_t src, loc_t loc) {
+	return parser_new_inst((hir_inst_t){
+		.kind = HIR_LVALUE_STORE,
+		.loc = loc,
+		.type = TYPE_VOID,
+		.d_lvalue_store.dest = dest,
+		.d_lvalue_store.src = src,
+	});
+}
+
+hir_rinst_t vlvalue_load(hir_rinst_t inst, type_t type, loc_t loc) {
+	return parser_new_inst((hir_inst_t){
+		.kind = HIR_LVALUE_LOAD,
+		.loc = loc,
+		.type = type,
+		.d_lvalue.src = inst,
+	});
 }
 
 hir_rinst_t vemit(parser_value_t value) {
@@ -507,7 +518,12 @@ hir_rinst_t vemit(parser_value_t value) {
 
 	switch (value.kind) {
 		case VAL_SYM:
-			return vsym_get(value, NULL);
+			return parser_new_inst((hir_inst_t){
+				.kind = HIR_SYM,
+				.loc = value.loc,
+				.type = value.type,
+				.d_sym = value.d_sym,
+			});
 		case VAL_INTEGER_LITERAL:
 			return parser_new_inst((hir_inst_t){
 				.kind = HIR_INTEGER_LITERAL,
@@ -589,13 +605,13 @@ void vpush_id(istr_t ident, loc_t loc) {
 		.kind = VAL_SYM,
 		.loc = loc,
 		.type = type,
-		.d_sym.resolved = resolved,
+		.d_sym.resv = resolved ? HIR_INST_RESOLVED_LOCAL : HIR_INST_RESOLVED_NONE,
 	};
 
 	if (resolved) {
-		val.d_sym.local = rlocal;
+		val.d_sym.data.local = rlocal;
 	} else {
-		val.d_sym.lit = ident;
+		val.d_sym.data.lit = ident;
 	}
 
 	parser_ctx.es[parser_ctx.es_len++] = val;
@@ -640,7 +656,8 @@ void vinfix(tok_t tok, loc_t loc) {
 		return;
 	}
 
-	
+	// TODO: if boolean expression like `||` or `&&`,
+	//       type must be TYPE_BOOL.
 
 	// TODO: resolve `TYPE_UNRESOLVED` if possible
 	//       checker should expose function that implements this
@@ -651,9 +668,9 @@ void vinfix(tok_t tok, loc_t loc) {
 	hir_rinst_t inst;
 
 	hir_rinst_t irhs = vemit(rhs);
+	hir_rinst_t ilhs = vemit(lhs);
 
 	if (tok != TOK_ASSIGN) {
-		hir_rinst_t ilhs = vemit(lhs);
 		
 		inst = parser_new_inst((hir_inst_t){
 			.loc = loc,
@@ -668,7 +685,7 @@ void vinfix(tok_t tok, loc_t loc) {
 	} else {
 		// assign expressions do actually return the value
 		// but must be reloaded for use in further expressions
-		vsym_set(irhs, lhs, loc);
+		vlvalue_store(ilhs, irhs, loc);
 		vpush_inst(irhs, loc);
 	}
 }
@@ -752,28 +769,60 @@ void parser_expr(u8 prec) {
 				parser_next();
 				vcast(parser_parse_type(), parser_ctx.tok.loc);
 				break;
+			case TOK_OPAR: {
+				hir_rinst_t *cl = (hir_rinst_t *)alloc_scratch(0);
+				u32 cc = 0;
+
+				parser_value_t target_v = vpop();
+				hir_rinst_t target = vemit(target_v);
+
+				parser_next();
+				while (parser_ctx.tok.type != TOK_CPAR) {
+					eprintf("go!\n");
+					parser_expr(0);
+					if (parser_ctx.tok.type == TOK_COMMA) {
+						parser_next();
+					} else if (parser_ctx.tok.type != TOK_CPAR) {
+						parser_unexpected("expected `,` or `)`");
+					}
+					cl[cc++] = vemit(vpop());
+				}
+				parser_next();
+
+				// commit
+				(void)alloc_scratch(cc * sizeof(hir_rinst_t));
+
+				parser_new_inst((hir_inst_t){
+					.kind = HIR_CALL,
+					.loc = target_v.loc,
+					.type = TYPE_UNKNOWN, // TODO: resolve...
+					.d_call.target = target,
+					.d_call.cc = cc,
+					.d_call.cl = cl,
+				});
+				break;
+			}
 			case TOK_INC:
 			case TOK_DEC:
 				parser_next();
 				parser_value_t sym = vpop();
 				hir_rinst_t oval = vemit(sym);
 
-				if (sym.kind != VAL_SYM) {
-					err_with_pos(sym.loc, "lhs of assignment must be an lvalue");
-					return;
-				}
+				// TODO: unify these locations... they're all over the place!
 
 				vpush_inst_back(oval);
 				vpush_ilit(sv_intern((u8*)"1", 1), token.loc, false);
 				vinfix(token.type == TOK_INC ? TOK_ADD : TOK_SUB, token.loc);
 				hir_rinst_t result = vemit(vpop());
-				vsym_set(result, sym, token.loc);
+				// vsym_set(result, sym, token.loc);
+				vlvalue_store(oval, result, token.loc);
 
 				// %0 = sym
 				// %1 = %0 + 1
 				//      store(%0, %1)
 				// << %0
 				vpush_inst_back(oval);
+				break;
 			default:
 				if (TOK_IS_INFIX(token.type)) {
 					u8 prec = parser_tok_precedence(token.type);
@@ -795,7 +844,7 @@ void parser_stmt() {
 	if (parser_ctx.tok.type == TOK_MUT || (parser_ctx.tok.type == TOK_IDENT && parser_ctx.peek.type == TOK_COLON)) {
 		bool is_mut = false;
 		bool has_init = false;
-		
+
 		if (parser_ctx.tok.type == TOK_MUT) {
 			is_mut = true;
 			parser_next();
@@ -837,12 +886,13 @@ void parser_stmt() {
 			.type = type,
 			.type_loc = type_loc,
 			.inst = inst,
+			.is_mut = is_mut,
 		});
 
 		if (has_init) {
 			parser_value_t val = vpop_bottom();
 			hir_rinst_t inst = vemit(val);
-			vlocal_set(id, inst, name_loc); // TODO: the loc_t should span the whole expression...
+			vlvalue_store(id, inst, name_loc); // TODO: the loc_t should span the whole expression...
 		}
 
 		return;
@@ -856,7 +906,7 @@ void parser_stmt() {
 			// `return expr, expr, expr`
 
 			hir_rinst_t *retl = (hir_rinst_t *)alloc_scratch(0);
-			u32 retc = parser_ctx.cproc.rets;
+			u32 retc = 0;
 
 			parser_next();
 			for (u32 i = 0; i < parser_ctx.cproc.rets; i++) {
