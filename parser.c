@@ -270,9 +270,10 @@ static void __attribute__ ((__noreturn__)) parser_unexpected(const char *err) {
 
 // will be filled from main()
 istr_t typeinfo_concrete_istr[_TYPE_CONCRETE_MAX];
+u32 typeinfo_concrete_istr_size;
 
 type_t parser_get_type(istr_t lit) {
-	for (u32 i = 0; i < _TYPE_CONCRETE_MAX; i++) {
+	for (u32 i = 0; i < typeinfo_concrete_istr_size; i++) {
 		if (typeinfo_concrete_istr[i] == lit) {
 			return (type_t)i;
 		}
@@ -693,6 +694,10 @@ void vcast(type_t type, loc_t loc) {
 
 	parser_value_t val = vpop();
 
+	(void)type;
+	(void)loc;
+	(void)val;
+
 	assert(0 && "TODO: emit");
 }
 
@@ -817,6 +822,36 @@ void parser_stmt() {
 	}
 
 	switch (parser_ctx.tok.type) {
+		case TOK_RETURN: {
+			loc_t loc = parser_ctx.tok.loc;
+
+			// matching `parser_ctx.cproc.rets`
+			// `return expr, expr, expr`
+
+			hir_rinst_t *retl = (hir_rinst_t *)alloc_scratch(0);
+			u32 retc = parser_ctx.cproc.rets;
+
+			parser_next();
+			for (u32 i = 0; i < parser_ctx.cproc.rets; i++) {
+				parser_expr(0);
+				if (i + 1 < parser_ctx.cproc.rets) {
+					parser_expect(TOK_COMMA);
+				}
+				retl[retc++] = vemit(vpop());
+			}
+
+			// commit
+			(void)alloc_scratch(retc * sizeof(hir_rinst_t));
+
+			parser_new_inst((hir_inst_t){
+				.kind = HIR_RETURN,
+				.loc = loc,
+				.type = TYPE_VOID,
+				.d_return.retl = retl,
+				.d_return.retc = retc,
+			});
+			break;
+		}			
 		default:
 			parser_expr(0);
 
@@ -825,6 +860,11 @@ void parser_stmt() {
 				vemit_garbage(vpop());
 			}
 	}
+
+	// TODO: the amount of values on the expression stack
+	//       is very much known and deterministic, this
+	//       could be removed.
+	assert(parser_ctx.es_len == 0);
 }
 
 void parser_parse_syn_scope(bool new_scope) {
@@ -919,7 +959,7 @@ fparsed:
 		arg.inst = parser_new_inst((hir_inst_t){
 			.kind = HIR_ARG,
 			.loc = arg_loc,
-			.type = type, // TODO: see HIR_LOCAL too. is a type necessary?
+			.type = TYPE_VOID, // TODO: see HIR_LOCAL too. is a type necessary?
 			.d_local.local = args,
 		});
 		// will be added to scope stack

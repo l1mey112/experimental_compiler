@@ -224,8 +224,8 @@ const char *tok_literal_representation(tok_t tok);
 u8 *alloc_scratch(size_t size);
 void alloc_reset(u8 *p);
 
-#define TYPE_X_CONCRETE_LIST \
-	X(TYPE_VOID, "void") \
+// these will be matched in a hash table
+#define TYPE_X_CONCRETE_LITERALS_LIST \
 	X(TYPE_I8, "i8") \
 	X(TYPE_I16, "i16") \
 	X(TYPE_I32, "i32") \
@@ -240,6 +240,11 @@ void alloc_reset(u8 *p);
 	X(TYPE_F64, "f64") \
 	X(TYPE_BOOL, "bool") \
 	X(TYPE_NORETURN, "noreturn")
+
+// `void` isn't a keyword.
+#define TYPE_X_CONCRETE_LIST \
+	TYPE_X_CONCRETE_LITERALS_LIST \
+	X(TYPE_VOID, "void")
 
 // types
 enum typeinfo_kind_t {
@@ -261,6 +266,7 @@ enum typeinfo_kind_t {
 
 // will be filled from main()
 extern istr_t typeinfo_concrete_istr[_TYPE_CONCRETE_MAX];
+extern u32 typeinfo_concrete_istr_size;
 
 struct typeinfo_t {
 	typeinfo_kind_t kind;
@@ -339,7 +345,7 @@ enum hir_inst_kind_t {
 	HIR_PHI,
 	HIR_CALL,
 	HIR_JMP,
-	HIR_RET,
+	HIR_RETURN,
 	HIR_PREFIX,
 	HIR_INFIX,
 };
@@ -378,6 +384,10 @@ struct hir_inst_t {
 			istr_t lit;
 			bool negate;
 		} d_literal;
+		struct {
+			hir_rinst_t *retl;
+			u8 retc;
+		} d_return;
 		/* struct {
 		} d_phi; */
 	};

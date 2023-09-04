@@ -1,6 +1,7 @@
 #include "all.h"
 
 #include <setjmp.h>
+#include <stdarg.h>
 #include "stb_ds.h"
 
 void err_with_pos(loc_t loc, const char *fmt, ...) {
@@ -44,11 +45,12 @@ void alloc_reset(u8 *p) {
 
 // TODO: insert types? if the value is `void` no need to assign
 static void _dump_inst(hir_proc_t *proc, hir_inst_t *inst) {
-	if (inst->type == TYPE_VOID) {
+	/* if (inst->type == TYPE_VOID) {
 		eprintf("     = ");
 	} else {
 		eprintf("%%%-3u = ", inst->id);
-	}
+	} */
+	eprintf("%%%u = ", inst->id);
 	switch (inst->kind) {
 		case HIR_ARG:
 			eprintf("arg(l%u:%s)\n", inst->d_local.local, sv_from(proc->locals[inst->d_local.local].name));
@@ -77,6 +79,16 @@ static void _dump_inst(hir_proc_t *proc, hir_inst_t *inst) {
 			break;
 		case HIR_PREFIX:
 			eprintf("%s %%%u\n", tok_literal_representation(inst->d_prefix.op), inst->d_prefix.val);
+			break;
+		case HIR_RETURN:
+			eprintf("return");
+			for (u32 i = 0; i < inst->d_return.retc; i++) {
+				eprintf(" %%%u", inst->d_return.retl[i]);
+				if (i + 1 < inst->d_return.retc) {
+					eprintf(",");
+				}
+			}
+			eprintf("\n");
 			break;
 		default:
 			assert_not_reached();

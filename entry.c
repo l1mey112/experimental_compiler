@@ -34,14 +34,12 @@ int main(int argc, const char *argv[]) {
 	}
 
 	// used for quick concrete type lookups
-	// TODO: because of stbds maps, the memory might be lie out like:
-	//       sv_interns:  [0 .. _TYPE_CONCRETE_MAX] = ... strings 
-	//       we could exploit this and just cmp all istrs < _TYPE_CONCRETE_MAX to match?
 	{
 		u32 i = 0;
 		#define X(_, lit) typeinfo_concrete_istr[i++] = sv_intern((u8*)lit, strlen(lit));
-		TYPE_X_CONCRETE_LIST
+		TYPE_X_CONCRETE_LITERALS_LIST
 		#undef X
+		typeinfo_concrete_istr_size = i;
 	}
 
 	// TODO: implement multi errors, but one per file.
