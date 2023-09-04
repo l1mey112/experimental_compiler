@@ -9,5 +9,5 @@ fn call_this() {
 }
 
 fn main(a: i32) {
-    a = (a = 2) + 1
+    a = (a = 2) + a
 }

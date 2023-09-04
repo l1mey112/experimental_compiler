@@ -517,13 +517,20 @@ hir_rinst_t vemit(parser_value_t value) {
 	}
 
 	switch (value.kind) {
-		case VAL_SYM:
-			return parser_new_inst((hir_inst_t){
+		case VAL_SYM: {
+			hir_rinst_t inst = parser_new_inst((hir_inst_t){
 				.kind = HIR_SYM,
 				.loc = value.loc,
 				.type = value.type,
 				.d_sym = value.d_sym,
 			});
+			return parser_new_inst((hir_inst_t){
+				.kind = HIR_LVALUE_LOAD,
+				.loc = value.loc,
+				.type = value.type,
+				.d_lvalue.src = inst,
+			});
+		}
 		case VAL_INTEGER_LITERAL:
 			return parser_new_inst((hir_inst_t){
 				.kind = HIR_INTEGER_LITERAL,
@@ -535,6 +542,19 @@ hir_rinst_t vemit(parser_value_t value) {
 		default:
 			assert_not_reached();
 	}
+}
+
+hir_rinst_t vemit_lvalue(parser_value_t value) {
+	if (value.kind == VAL_SYM) {
+		return parser_new_inst((hir_inst_t){
+			.kind = HIR_SYM,
+			.loc = value.loc,
+			.type = value.type,
+			.d_sym = value.d_sym,
+		});
+	}
+
+	return vemit(value);
 }
 
 // UB if the current block does not store the instruction in `inst`
@@ -667,8 +687,8 @@ void vinfix(tok_t tok, loc_t loc) {
 
 	hir_rinst_t inst;
 
+	hir_rinst_t ilhs = vemit_lvalue(lhs);
 	hir_rinst_t irhs = vemit(rhs);
-	hir_rinst_t ilhs = vemit(lhs);
 
 	if (tok != TOK_ASSIGN) {
 		
@@ -806,7 +826,7 @@ void parser_expr(u8 prec) {
 			case TOK_DEC:
 				parser_next();
 				parser_value_t sym = vpop();
-				hir_rinst_t oval = vemit(sym);
+				hir_rinst_t oval = vemit_lvalue(sym);
 
 				// TODO: unify these locations... they're all over the place!
 
