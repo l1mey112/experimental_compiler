@@ -534,6 +534,7 @@ void vdelete_inst(hir_rinst_t inst) {
 	//       in most cases we should be able to just pop the top
 	//       in other cases, it isn't really the parsers job...
 	// assert(0 && "TODO: implement NOPs");
+	eprintf("nop reached: %u\n", inst);
 	parser_ctx.cproc.insts[inst].type = HIR_NOP;
 }
 
@@ -557,6 +558,18 @@ void vemit_garbage(parser_value_t value) {
 	// --- (x = 2) + 1 // <-- error on the `+ 1` part
 	//
 	// note: `x = 2` -> `(x = 2, x)` where `, x)` is an VAL_INST with VAL_INST_FLAGS_RESULT_SAFE_DISCARD set.
+
+	// remember the use of `VAL_INST_FLAGS_RESULT_SAFE_DISCARD` should be done to
+	// remove instructions that are essentially, junk.
+	// take a v++ expression:
+	// 
+	//     %0 = sym
+	//     %1 = %0 + 1
+	//          store(%0, %1)
+	//     << %0
+	//
+	// it's okay to pop off `%0` from the stack and ignore it.
+	// extra loads weren't generated for no reason.
 
 	if (value.kind == VAL_INST && value.d_inst.flags & VAL_INST_FLAGS_RESULT_SAFE_DISCARD) {
 		// we won't emit, but the load (assign expressions) has already taken place...
@@ -780,10 +793,7 @@ void parser_expr(u8 prec) {
 				// %1 = %0 + 1
 				//      store(%0, %1)
 				// << %0
-				vpush_inst_back_flags(oval, VAL_INST_FLAGS_RESULT_SAFE_DISCARD);
-				// vsym_set(irhs, lhs, loc);
-				// inst = vsym_get(lhs, &loc);
-				// vpush_inst_flags(inst, loc, VAL_INST_FLAGS_RESULT_SAFE_DISCARD);
+				vpush_inst_back(oval);
 			default:
 				if (TOK_IS_INFIX(token.type)) {
 					u8 prec = parser_tok_precedence(token.type);
