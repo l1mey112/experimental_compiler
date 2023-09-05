@@ -357,6 +357,18 @@ enum hir_inst_kind_t {
 	HIR_INFIX,
 };
 
+struct mod_t {
+	istr_t name;
+};
+
+// wouldn't be larger than a `u16`, but
+typedef u32 rmod_t;
+
+struct hir_sym_t {
+	rmod_t mod;
+	istr_t sym;
+};
+
 struct hir_inst_sym_data_t {
 	enum _ {
 		HIR_INST_RESOLVED_LOCAL,
