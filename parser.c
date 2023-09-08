@@ -19,6 +19,8 @@ enum parser_value_type_t {
 	// VAL_FLOAT_LITERAL,
 };
 
+// TODO: instructions should never be deleted in the parser...
+//       should be `SAFE_DISCARD` instead to discard a value if needed.
 enum parser_value_inst_flags_t {
 	// a = 230     <-- safe to remove duplicate load
 	// see: vemit_garbage()
@@ -119,6 +121,10 @@ const char *tok_literal_representation(tok_t tok) {
 }
 
 static parser_ctx_t parser_ctx;
+
+static bool is_lvalue(hir_rinst_t inst) {
+	return parser_ctx.cproc.insts[inst].is_lvalue;
+}
 
 static bool is_id_begin(u8 ch) {
     return isalpha(ch) || ch == '_';
@@ -489,22 +495,13 @@ hir_rinst_t vsym_set(hir_rlocal_t rlocal, parser_value_t value, loc_t loc) {
 	}
 } */
 
-hir_rinst_t vlvalue_store(hir_rinst_t dest, hir_rinst_t src, loc_t loc) {
+hir_rinst_t vstore(hir_rinst_t dest, hir_rinst_t src, loc_t loc) {
 	return parser_new_inst((hir_inst_t){
-		.kind = HIR_LVALUE_STORE,
+		.kind = HIR_STORE,
 		.loc = loc,
 		.type = TYPE_VOID,
-		.d_lvalue_store.dest = dest,
-		.d_lvalue_store.src = src,
-	});
-}
-
-hir_rinst_t vlvalue_load(hir_rinst_t inst, type_t type, loc_t loc) {
-	return parser_new_inst((hir_inst_t){
-		.kind = HIR_LVALUE_LOAD,
-		.loc = loc,
-		.type = type,
-		.d_lvalue.src = inst,
+		.d_store.dest = dest,
+		.d_store.src = src,
 	});
 }
 
@@ -518,17 +515,12 @@ hir_rinst_t vemit(parser_value_t value) {
 
 	switch (value.kind) {
 		case VAL_SYM: {
-			hir_rinst_t inst = parser_new_inst((hir_inst_t){
+			return parser_new_inst((hir_inst_t){
 				.kind = HIR_SYM,
 				.loc = value.loc,
 				.type = value.type,
 				.d_sym = value.d_sym,
-			});
-			return parser_new_inst((hir_inst_t){
-				.kind = HIR_LVALUE_LOAD,
-				.loc = value.loc,
-				.type = value.type,
-				.d_lvalue.src = inst,
+				.is_lvalue = true,
 			});
 		}
 		case VAL_INTEGER_LITERAL:
@@ -618,8 +610,21 @@ void vpush_id(istr_t ident, loc_t loc) {
 
 	hir_rlocal_t rlocal = parser_locate_local(ident);
 	bool resolved = rlocal != (hir_rlocal_t)-1;
-	
+
+	parser_value_t val;
 	type_t type = rlocal == (hir_rlocal_t)-1 ? TYPE_UNRESOLVED : parser_ctx.cproc.locals[rlocal].type;
+
+	if (resolved) {
+		val = (parser_value_t){
+			.kind = VAL_INST,
+			.loc = loc,
+			.type = type,
+			.d_inst. // TODO: ---------- HERE
+		};
+	} else {
+		
+	}
+	
 
 	parser_value_t val = {
 		.kind = VAL_SYM,
@@ -705,7 +710,7 @@ void vinfix(tok_t tok, loc_t loc) {
 	} else {
 		// assign expressions do actually return the value
 		// but must be reloaded for use in further expressions
-		vlvalue_store(ilhs, irhs, loc);
+		vstore(ilhs, irhs, loc);
 		vpush_inst(irhs, loc);
 	}
 }
@@ -817,8 +822,8 @@ void parser_expr(u8 prec) {
 					.loc = target_v.loc,
 					.type = TYPE_UNKNOWN, // TODO: resolve...
 					.d_call.target = target,
-					.d_call.cc = cc,
-					.d_call.cl = cl,
+					.d_call.ilist = cl,
+					.d_call.ilen = cc,
 				});
 				break;
 			}
@@ -835,7 +840,7 @@ void parser_expr(u8 prec) {
 				vinfix(token.type == TOK_INC ? TOK_ADD : TOK_SUB, token.loc);
 				hir_rinst_t result = vemit(vpop());
 				// vsym_set(result, sym, token.loc);
-				vlvalue_store(oval, result, token.loc);
+				vstore(oval, result, token.loc);
 
 				// %0 = sym
 				// %1 = %0 + 1
@@ -897,8 +902,9 @@ void parser_stmt() {
 		hir_rinst_t inst = parser_new_inst((hir_inst_t){
 			.kind = HIR_LOCAL,
 			.loc = name_loc,
-			.type = type, // TODO: unnecessary? it should be a pointer? idk..
-			.d_local.local = id,
+			.type = type,
+			.d_local = id,
+			.is_lvalue = true,
 		});
 		parser_new_local((hir_local_t){
 			.name = name,
@@ -911,8 +917,8 @@ void parser_stmt() {
 
 		if (has_init) {
 			parser_value_t val = vpop_bottom();
-			hir_rinst_t inst = vemit(val);
-			vlvalue_store(id, inst, name_loc); // TODO: the loc_t should span the whole expression...
+			hir_rinst_t ival = vemit(val);
+			vstore(inst, ival, name_loc); // TODO: the loc_t should span the whole expression...
 		}
 
 		return;
@@ -944,8 +950,8 @@ void parser_stmt() {
 				.kind = HIR_RETURN,
 				.loc = loc,
 				.type = TYPE_VOID,
-				.d_return.retl = retl,
-				.d_return.retc = retc,
+				.d_return.ilist = retl,
+				.d_return.ilen = retc,
 			});
 			break;
 		}			
@@ -1057,7 +1063,8 @@ fparsed:
 			.kind = HIR_ARG,
 			.loc = arg_loc,
 			.type = TYPE_VOID, // TODO: see HIR_LOCAL too. is a type necessary?
-			.d_local.local = args,
+			.d_local = args,
+			.is_lvalue = true,
 		});
 		// will be added to scope stack
 		parser_new_local(arg);

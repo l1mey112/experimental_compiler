@@ -335,26 +335,23 @@ struct hir_block_t {
 };
 
 // HIR_ARG   : function arguments.
-// HIR_SYM   : unresolved symbol.
+// HIR_SYM   : unresolved symbol. checker will resolve
 // HIR_LOCAL : resolved symbol in parsing phase, local.
-//
-// HIR_LVALUE_LOAD  : the checker will evaluate these
-// HIR_LVALUE_STORE : and lower them concretely.
 //
 enum hir_inst_kind_t {
 	HIR_NOP,
 	HIR_ARG,
 	HIR_LOCAL,
 	HIR_SYM,
-	HIR_LVALUE_LOAD,
-	HIR_LVALUE_STORE,
+	HIR_LOAD,
+	HIR_STORE,
 	HIR_INTEGER_LITERAL,
-	HIR_PHI,
+	HIR_ADDR_OF,
 	HIR_CALL,
-	HIR_JMP,
 	HIR_RETURN,
 	HIR_PREFIX,
 	HIR_INFIX,
+	// HIR_JMP,
 };
 
 struct mod_t {
@@ -371,11 +368,9 @@ struct hir_sym_t {
 
 struct hir_inst_sym_data_t {
 	enum _ {
-		HIR_INST_RESOLVED_LOCAL,
 		HIR_INST_RESOLVED_NONE,
 	} resv;
 	union {
-		hir_rinst_t local;
 		istr_t lit; // TODO: rsym_t which stores the module and literal
 	} data;
 };
@@ -385,43 +380,56 @@ struct hir_inst_t {
 	hir_rinst_t id;
 	loc_t loc;
 	type_t type; // -1 for none, TYPE_UNKNOWN is something else
+	bool is_lvalue;
 	
 	union {
+		hir_rlocal_t d_local; // HIR_ARG, HIR_LOCAL
+		hir_inst_sym_data_t d_sym; // HIR_SYM
+		// HIR_ADDR_OF
 		struct {
-			u16 local;
-		} d_local; // d_arg
-		hir_inst_sym_data_t d_sym;
+			hir_rinst_t d_inst;
+			bool is_mut_ref;
+		} d_addr_of;
+		struct {
+			istr_t field;
+			hir_rinst_t val;
+		} d_field;
+		// HIR_LOAD
 		struct {
 			hir_rinst_t src;
-		} d_lvalue;
+		} d_load;
+		// HIR_STORE
 		struct {
 			hir_rinst_t dest;
 			hir_rinst_t src;
-		} d_lvalue_store;
+		} d_store;
+		// HIR_PREFIX
 		struct {
 			tok_t op;
 			hir_rinst_t val;
 		} d_prefix;
+		// HIR_CALL
 		struct {
 			tok_t op;
 			hir_rinst_t rhs;
 			hir_rinst_t lhs;
 		} d_infix;
+		// HIR_INTEGER_LITERAL
 		struct {
 			istr_t lit;
 			bool negate;
 		} d_literal;
+		// HIR_RETURN
 		struct {
-			hir_rinst_t *retl;
-			u8 retc;
+			hir_rinst_t *ilist;
+			u16 ilen;
 		} d_return;
+		// HIR_CALL
 		struct {
 			hir_rinst_t target;
-			hir_rinst_t *cl;
-			u8 cc;
+			hir_rinst_t *ilist;
+			u16 ilen;
 		} d_call;
-		/* struct {
-		} d_phi; */
 	};
 };
 
