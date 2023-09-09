@@ -387,9 +387,10 @@ struct hir_inst_t {
 		hir_inst_sym_data_t d_sym; // HIR_SYM
 		// HIR_ADDR_OF
 		struct {
-			hir_rinst_t d_inst;
+			hir_rinst_t src;
 			bool is_mut_ref;
 		} d_addr_of;
+		// HIR_FIELD
 		struct {
 			istr_t field;
 			hir_rinst_t val;

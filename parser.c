@@ -536,19 +536,6 @@ hir_rinst_t vemit(parser_value_t value) {
 	}
 }
 
-hir_rinst_t vemit_lvalue(parser_value_t value) {
-	if (value.kind == VAL_SYM) {
-		return parser_new_inst((hir_inst_t){
-			.kind = HIR_SYM,
-			.loc = value.loc,
-			.type = value.type,
-			.d_sym = value.d_sym,
-		});
-	}
-
-	return vemit(value);
-}
-
 // UB if the current block does not store the instruction in `inst`
 void vdelete_inst(hir_rinst_t inst) {
 	// remove from top
@@ -619,25 +606,17 @@ void vpush_id(istr_t ident, loc_t loc) {
 			.kind = VAL_INST,
 			.loc = loc,
 			.type = type,
-			.d_inst. // TODO: ---------- HERE
+			.d_inst.inst = parser_ctx.cproc.locals[rlocal].inst, // TODO: ---------- HERE
 		};
 	} else {
-		
-	}
-	
-
-	parser_value_t val = {
-		.kind = VAL_SYM,
-		.loc = loc,
-		.type = type,
-		.d_sym.resv = resolved ? HIR_INST_RESOLVED_LOCAL : HIR_INST_RESOLVED_NONE,
-	};
-
-	if (resolved) {
-		val.d_sym.data.local = rlocal;
-	} else {
-		val.d_sym.data.lit = ident;
-	}
+		val = (parser_value_t){
+			.kind = VAL_SYM,
+			.loc = loc,
+			.type = type,
+			.d_sym.resv = HIR_INST_RESOLVED_NONE,
+			.d_sym.data.lit = ident,
+		};
+	}	
 
 	parser_ctx.es[parser_ctx.es_len++] = val;
 }
@@ -676,10 +655,10 @@ void vinfix(tok_t tok, loc_t loc) {
 	// TODO: `ir_is_lvalue()`
 	//       we won't always have access to the concrete representation
 	// TODO: should we store lvalue paths as a VAL_* ? it would simplify things
-	if (tok == TOK_ASSIGN && lhs.kind != VAL_SYM) {
+	/* if (tok == TOK_ASSIGN && lhs.kind != VAL_SYM) {
 		err_with_pos(loc, "lhs of assignment must be an lvalue");
 		return;
-	}
+	} */
 
 	// TODO: if boolean expression like `||` or `&&`,
 	//       type must be TYPE_BOOL.
@@ -692,7 +671,7 @@ void vinfix(tok_t tok, loc_t loc) {
 
 	hir_rinst_t inst;
 
-	hir_rinst_t ilhs = vemit_lvalue(lhs);
+	hir_rinst_t ilhs = vemit(lhs);
 	hir_rinst_t irhs = vemit(rhs);
 
 	if (tok != TOK_ASSIGN) {
@@ -831,7 +810,7 @@ void parser_expr(u8 prec) {
 			case TOK_DEC:
 				parser_next();
 				parser_value_t sym = vpop();
-				hir_rinst_t oval = vemit_lvalue(sym);
+				hir_rinst_t oval = vemit(sym);
 
 				// TODO: unify these locations... they're all over the place!
 
@@ -928,20 +907,16 @@ void parser_stmt() {
 		case TOK_RETURN: {
 			loc_t loc = parser_ctx.tok.loc;
 
-			// matching `parser_ctx.cproc.rets`
-			// `return expr, expr, expr`
+			// return expr, expr, expr
 
 			hir_rinst_t *retl = (hir_rinst_t *)alloc_scratch(0);
 			u32 retc = 0;
 
 			parser_next();
-			for (u32 i = 0; i < parser_ctx.cproc.rets; i++) {
+			do {
 				parser_expr(0);
-				if (i + 1 < parser_ctx.cproc.rets) {
-					parser_expect(TOK_COMMA);
-				}
 				retl[retc++] = vemit(vpop());
-			}
+			} while (parser_ctx.tok.type == TOK_COMMA);
 
 			// commit
 			(void)alloc_scratch(retc * sizeof(hir_rinst_t));

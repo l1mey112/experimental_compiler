@@ -43,7 +43,7 @@ void alloc_reset(u8 *p) {
 	scratch_p = p;
 }
 
-#define LINE_LEN_PADDING 30
+#define LINE_LEN_PADDING 20
 
 static void _padding_to_size(u32 line_len) {
 	if (line_len < LINE_LEN_PADDING) {
@@ -67,7 +67,7 @@ static void _dump_inst(hir_proc_t *proc, hir_inst_t *inst) {
 		eprintf("%%%-3u = ", inst->id);
 	} */
 	u32 line_len = 0;
-	if (inst->kind != HIR_STORE) {
+	if (inst->kind != HIR_STORE && inst->kind != HIR_RETURN) {
 		line_len += eprintf("%s = ", _inst_str(proc, inst->id));
 	}
 	switch (inst->kind) {
@@ -85,7 +85,7 @@ static void _dump_inst(hir_proc_t *proc, hir_inst_t *inst) {
 			eprintf("; def %s%s: %s\n", local->is_mut ? "mut " : "", sv_from(local->name), table_type_dbg_str(local->type));
 			break;
 		}
-		case HIR_SYM:
+		/* case HIR_SYM:
 			if (inst->d_sym.resv == HIR_INST_RESOLVED_LOCAL) {
 				hir_local_t *local = &proc->locals[inst->d_sym.data.local];
 				line_len += eprintf("sym(%s)", sv_from(local->name));
@@ -98,7 +98,9 @@ static void _dump_inst(hir_proc_t *proc, hir_inst_t *inst) {
 			} else {
 				eprintf("sym(%s)\n", sv_from(inst->d_sym.data.lit));
 			}
-			break;
+			break; */
+		case HIR_SYM:
+			eprintf("sym(%s)\n", sv_from(inst->d_sym.data.lit));
 		case HIR_LOAD:
 			eprintf("load %s\n", _inst_str(proc, inst->d_load.src));
 			break;
