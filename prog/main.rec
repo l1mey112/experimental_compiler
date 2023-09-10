@@ -1,4 +1,5 @@
 import sub
+import rt.linux
 
 fn main(a: i32) {
     return a = (a = 2) + a

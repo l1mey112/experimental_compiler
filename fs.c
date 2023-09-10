@@ -10,23 +10,8 @@
 
 #include "stb_ds.h"
 
-typedef struct fs_node_t fs_node_t;
-
 // #define MODULE_INVALID ((rmodule_t)-1)
 // #define MODULE_MAIN ((rmodule_t)0)
-
-// node in a directory tree, also a module
-// root fs_nodes don't have a name, except when is_main
-struct fs_node_t {
-	const char *path;
-	fs_rnode_t parent;
-	fs_rnode_t *children;
-	u32 children_len;
-	u32 our_files;
-	istr_t name; // shortname
-	bool is_src_scanned; // importing a module where == true and our_files == 0 is an error
-	bool is_main;
-};
 
 u32 fs_node_arena_len;
 u32 fs_node_roots_len;
@@ -58,16 +43,20 @@ bool is_our_ext(const char *fp) {
 // these files are small and PROT_READ, i assume the kernel would do some magic anyway.
 // mmapping is infinitely more elegant than reading the file into memory through f* calls	
 static void _fs_slurp_file_with_size(const char *p, fs_rnode_t module, size_t size) {
-	int fd = open(p, O_RDONLY);
-	void *ptr = mmap(NULL, size, PROT_READ, MAP_PRIVATE, fd, 0);
-	close(0);
+	void *ptr = NULL;
 
-	// should i add MAP_POPULATE?
-	// it would help, i am reading the whole thing left to right
+	if (size != 0) {
+		int fd = open(p, O_RDONLY);
+		ptr = mmap(NULL, size, PROT_READ, MAP_PRIVATE, fd, 0);
+		close(0);
 
-	// i assume open won't fail, if it does, mmap will
-	if (ptr == MAP_FAILED) {
-		err_without_pos("error: failed to mmap file '%s' - %s\n", p, strerror(errno));
+		// should i add MAP_POPULATE?
+		// it would help, i am reading the whole thing left to right
+
+		// i assume open won't fail, if it does, mmap will
+		if (ptr == MAP_FAILED) {
+			err_without_pos("error: failed to mmap file '%s' - %s\n", p, strerror(errno));
+		}
 	}
 
 	assert(fs_files_queue_len < ARRAYLEN(fs_files_queue));
@@ -89,6 +78,7 @@ void fs_slurp_file(const char *p, fs_rnode_t mod) {
 
 void fs_slurp_dir(fs_rnode_t ref) {
 	fs_node_t *node = &fs_node_arena[ref];
+	assert(!node->is_src_scanned);
 	node->is_src_scanned = true; // files have been read from this directory
 
 	DIR *dir = opendir(node->path);
@@ -99,8 +89,6 @@ void fs_slurp_dir(fs_rnode_t ref) {
 
 	struct dirent *entry;
 	struct stat statbuf;
-
-	fs_rnode_t *children = NULL;
 
 	while ((entry = readdir(dir)) != NULL) {
 		if (entry->d_name[0] == '.') {
@@ -199,9 +187,9 @@ static fs_rnode_t _fs_make_directory(const char *path, fs_rnode_t parent, bool r
 // with no files in it.
 // call this with a circular symlink? that's on you.
 //
-fs_rnode_t fs_register_root(const char *p, bool is_main) {
+fs_rnode_t fs_register_root(const char *p, bool is_main, bool slurp) {
 	// roots can't have names, unless they're the main module
-	fs_rnode_t root = _fs_make_directory(p, root, false, is_main);
+	fs_rnode_t root = _fs_make_directory(p, (fs_rnode_t)-1, false, slurp);
 
 	if (is_main) {
 		fs_node_arena[root].name = sv_move("main");
@@ -215,6 +203,7 @@ fs_rnode_t fs_register_root(const char *p, bool is_main) {
 }
 
 // returns -1 for none
+// also COULD return src, check for this
 static fs_rnode_t _fs_locate_node(fs_rnode_t src, istr_t *path, u32 path_len) {
 	fs_node_t *srcp = &fs_node_arena[src];
 
@@ -244,6 +233,19 @@ static fs_rnode_t _fs_locate_node(fs_rnode_t src, istr_t *path, u32 path_len) {
 	return src;
 }
 
+static const char *_path_to_str(istr_t *path, u32 path_len) {
+	u8 *p = alloc_scratch(0);
+	u8 *po = p;
+	for (u32 i = 0; i < path_len; i++) {
+		const char *sv = sv_from(path[i]);
+		p += ptrcpy(p, (u8 *)sv, strlen(sv));
+	}
+	*p = '\0';
+	alloc_scratch(p - po + 1);
+
+	return (const char *)po;
+}
+
 static fs_rnode_t _fs_locate_node_from_all(fs_rnode_t src, istr_t *path, u32 path_len, loc_t loc) {
 	// case 1:
 	//   find the module relative to `src`
@@ -255,37 +257,26 @@ static fs_rnode_t _fs_locate_node_from_all(fs_rnode_t src, istr_t *path, u32 pat
 	// case 1:
 	fs_rnode_t found = _fs_locate_node(src, path, path_len);
 
-	if (found == (fs_rnode_t)-1) {
+	if (found != (fs_rnode_t)-1 && found != src) {
 		return found;
 	}
 
 	// case 2:
 	for (u32 i = 0; i < fs_node_roots_len; i++) {
 		fs_rnode_t root = fs_node_roots[i];
-		fs_node_t *rootp = &fs_node_arena[root];
-
 		found = _fs_locate_node(root, path, path_len);
 
-		if (found != (fs_rnode_t)-1) {
+		if (found != (fs_rnode_t)-1 && found != src) {
 			return found;
 		}
 	}
 
-	u8 *p = alloc_scratch(0);
-	u8 *po = p;
-	for (u32 i = 0; i < path_len; i++) {
-		const char *sv = sv_from(path[i]);
-		p += ptrcpy(p, (u8 *)sv, strlen(sv));
-	}
-	*p = '\0';
-	alloc_scratch(p - po + 1);
-
-	err_with_pos(loc, "error: could not find module '%s'\n", p);
+	err_with_pos(loc, "error: could not find module `%s`", _path_to_str(path, path_len));
 }
 
 // import mod1.mod2.mod3
 //
-void fs_register_import(fs_rnode_t src, fs_rnode_t *path, u32 path_len, loc_t loc) {
+fs_rnode_t fs_register_import(fs_rnode_t src, fs_rnode_t *path, u32 path_len, loc_t loc) {
 	// case 1:
 	//   find the module relative to `src`
 	// case 2:
@@ -294,30 +285,49 @@ void fs_register_import(fs_rnode_t src, fs_rnode_t *path, u32 path_len, loc_t lo
 	//   error!
 
 	fs_rnode_t found = _fs_locate_node_from_all(src, path, path_len, loc);
+
+	if (fs_node_arena[found].our_files == 0) {
+		err_with_pos(loc, "error: module `%s` has no files", _path_to_str(path, path_len));
+	}
+	
+	fs_slurp_dir(found);
+	return found;
 }
 
 fs_file_t *fs_filep(fs_rfile_t ref) {
 	return &fs_files_queue[ref];
 }
 
-void _fs_dump_tree(fs_rnode_t node, u32 indent) {
+fs_node_t *fs_nodep(fs_rnode_t ref) {
+	return &fs_node_arena[ref];
+}
+
+void _fs_dump_tree(fs_rnode_t node, bool is_root, u32 indent) {
 	fs_node_t *nodep = &fs_node_arena[node];
 
 	for (u32 i = 0; i < indent; i++) {
 		eprintf("\t");
 	}
 
-	eprintf("%s: (%u src files)%s\n", sv_from(nodep->name), nodep->our_files, nodep->is_src_scanned ? " [imported]" : "");
+	const char *name;
+
+	if (!is_root || nodep->is_main) {
+		name = sv_from(nodep->name);
+	} else {
+		name = nodep->path;
+	}
+
+	eprintf("%s: (%u src files)%s\n", name, nodep->our_files, nodep->is_src_scanned ? " [imported]" : "");
 
 	for (u32 i = 0; i < nodep->children_len; i++) {
 		fs_rnode_t child = nodep->children[i];
-		_fs_dump_tree(child, indent + 1);
+		_fs_dump_tree(child, false, indent + 1);
 	}
 }
 
 void fs_dump_tree(void) {
 	for (u32 i = 0; i < fs_node_roots_len; i++) {
 		fs_rnode_t root = fs_node_roots[i];
-		_fs_dump_tree(root, 0);
+		_fs_dump_tree(root, true, 0);
 	}
 }

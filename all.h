@@ -62,17 +62,20 @@ typedef u32 hir_rinst_t;
 typedef u32 hir_rblock_t;
 typedef u32 fs_rfile_t;
 typedef u32 fs_rnode_t;
+typedef struct fs_node_t fs_node_t;
 typedef struct fs_file_t fs_file_t;
 
 const char *last_path(const char* path);
 const char *base_path(const char* path);
+const char *relative_path_of_exe(void);
 
 bool is_our_ext(const char *fp);
 void fs_slurp_file(const char *p, fs_rnode_t mod);
 void fs_slurp_dir(fs_rnode_t ref);
-fs_rnode_t fs_register_root(const char *p, bool is_main);
-void fs_register_import(fs_rnode_t src, fs_rnode_t *path, u32 path_len, loc_t loc);
+fs_rnode_t fs_register_root(const char *p, bool is_main, bool slurp);
+fs_rnode_t fs_register_import(fs_rnode_t src, fs_rnode_t *path, u32 path_len, loc_t loc);
 fs_file_t *fs_filep(fs_rfile_t ref);
+fs_node_t *fs_nodep(fs_rnode_t ref);
 void fs_dump_tree(void);
 
 #define TYPE_UNRESOLVED ((type_t)-1)
@@ -82,6 +85,19 @@ istr_t sv_move(const char *p);
 const char *sv_from(istr_t str);
 
 void parser_parse_file(fs_rfile_t file);
+
+// node in a directory tree, also a module
+// root fs_nodes don't have a name, except when is_main
+struct fs_node_t {
+	const char *path;
+	fs_rnode_t parent;
+	fs_rnode_t *children;
+	u32 children_len;
+	u32 our_files;
+	istr_t name; // shortname
+	bool is_src_scanned; // importing a module where == true and our_files == 0 is an error
+	bool is_main;
+};
 
 struct fs_file_t {
 	const char *fp;
@@ -128,7 +144,8 @@ void err_without_pos(const char *fmt, ...)
 	X(TOK_ELSE, "else") \
 	X(TOK_FOR, "for") \
 	X(TOK_BREAK, "break") \
-	X(TOK_CONTINUE, "continue")
+	X(TOK_CONTINUE, "continue") \
+	X(TOK_IMPORT, "import")
 
 // in specific order due to how operators are parsed
 #define TOK_X_OPERATOR_LIST \
@@ -366,18 +383,6 @@ enum hir_inst_kind_t {
 	HIR_PREFIX,
 	HIR_INFIX,
 	// HIR_JMP,
-};
-
-struct mod_t {
-	istr_t name;
-};
-
-// wouldn't be larger than a `u16`, but
-typedef u32 rmod_t;
-
-struct hir_sym_t {
-	rmod_t mod;
-	istr_t sym;
 };
 
 struct hir_inst_sym_data_t {

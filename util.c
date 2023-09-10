@@ -2,6 +2,9 @@
 
 #include <setjmp.h>
 #include <stdarg.h>
+#include <linux/limits.h>
+#include <stdio.h>
+#include <unistd.h>
 #include "stb_ds.h"
 
 const char *last_path(const char* path) {
@@ -22,11 +25,37 @@ const char *base_path(const char* path) {
 	}
 
 	size_t len = sp - path;
-
 	char *base = (char *)malloc(len + 1);
 
-	strncpy(base, path, len);
+	memcpy(base, path, len);
+	base[len] = '\0';
+
 	return base;
+}
+
+const char *make_relative(const char *cwd, const char *path) {
+	while (*cwd != '\0' && *cwd == *path) {
+		cwd++;
+		path++;
+	}
+	while (*path != '\0' && *path == '/') {
+		path++;
+	}
+	return path;
+}
+
+const char *relative_path_of_exe(void) {
+	char *scratch = (char *)alloc_scratch(0);
+	ssize_t len = readlink("/proc/self/exe", scratch, PATH_MAX);
+	if (len < 0) {
+		err_without_pos("error: could not read `/proc/self/exe`");
+	}
+	scratch[len] = '\0';
+	const char *exe_path = base_path(scratch); // will dup
+	if (!getcwd(scratch, PATH_MAX)) {
+		err_without_pos("error: could not get current working directory");
+	}
+	return strdup(make_relative(scratch, exe_path));
 }
 
 void err_with_pos(loc_t loc, const char *fmt, ...) {
@@ -52,7 +81,7 @@ void err_without_pos(const char *fmt, ...) {
 }
 
 // used for memory that lasts forever, simple bump ptr allocator
-static u8 scratch_buf[8192];
+static u8 scratch_buf[16384];
 static u8 *scratch_p = scratch_buf;
 
 u8 *alloc_scratch(size_t size) {

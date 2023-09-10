@@ -1,7 +1,7 @@
 #include "all.h"
 #include <alloca.h>
-#include <string.h>
 #include <setjmp.h>
+#include <stdio.h>
 
 #define STB_DS_IMPLEMENTATION
 #include "stb_ds.h"
@@ -9,6 +9,10 @@
 const char* __asan_default_options(void) { return "detect_leaks=0"; }
 
 err_diag_t err_diag;
+
+#ifndef __linux__ 
+	#error "not portable to places other than linux"
+#endif
 
 int main(int argc, const char *argv[]) {
 	if (argc != 2) {
@@ -28,13 +32,24 @@ int main(int argc, const char *argv[]) {
 
 	const char *argv2 = argv[1];
 
-	fs_rnode_t main;
 	if (is_our_ext(argv2)) {
 		const char *bp = base_path(argv2);
-		main = fs_register_root(bp, false);
+		fs_rnode_t main = fs_register_root(bp, true, false);
 		fs_slurp_file(argv2, main);
 	} else {
-		main = fs_register_root(argv2, true);
+		(void)fs_register_root(argv2, true, true);
+	}
+
+	// list `lib` directory as a root
+	{
+		const char *exe_path = relative_path_of_exe();
+		char *lib_path;
+		if (*exe_path == '\0') {
+			lib_path = "lib";
+		} else {
+			asprintf(&lib_path, "%s/lib", exe_path);
+		}
+		(void)fs_register_root(lib_path, false, false);
 	}
 
 	// used for quick concrete type lookups

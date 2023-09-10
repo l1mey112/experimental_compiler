@@ -71,6 +71,7 @@ struct parser_ctx_t {
 	hir_proc_t cproc;
 	fs_rfile_t file;
 	fs_rnode_t module;
+	bool has_done_imports;
 };
 
 // allocates using alloc_* functions
@@ -1131,7 +1132,32 @@ fparsed:
 }
 
 void parser_top_stmt() {
+	if (parser_ctx.tok.type != TOK_IMPORT) {
+		parser_ctx.has_done_imports = true;
+	}
+	
 	switch (parser_ctx.tok.type) {
+		case TOK_IMPORT:
+			if (parser_ctx.has_done_imports) {
+				parser_unexpected("import declaration must come before code");
+			}
+
+			loc_t path_loc = parser_ctx.tok.loc; // TODO: extend to end of path
+			istr_t *fields = (istr_t *)alloc_scratch(0);
+			u32 fields_len = 0;
+			do {
+				parser_next();
+				istr_t field = parser_ctx.tok.lit;
+				parser_expect(TOK_IDENT);
+				fields[fields_len++] = field;
+			} while(parser_ctx.tok.type == TOK_DOT);
+			// commit
+			alloc_scratch(fields_len * sizeof(istr_t));
+			{
+				(void)fs_register_import(parser_ctx.module, fields, fields_len, path_loc);
+			}
+			alloc_reset((u8 *)fields);
+			break;
 		case TOK_FN:
 		case TOK_EXTERN:
 			parser_fn_def_stmt();
