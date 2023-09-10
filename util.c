@@ -4,6 +4,31 @@
 #include <stdarg.h>
 #include "stb_ds.h"
 
+const char *last_path(const char* path) {
+	const char* sp = strrchr(path, '/');
+
+	if (sp == NULL) {
+		return path;
+	}
+
+	return strdup(sp + 1);
+}
+
+const char *base_path(const char* path) {
+	const char* sp = strrchr(path, '/');
+
+	if (sp == NULL) {
+		return ".";
+	}
+
+	size_t len = sp - path;
+
+	char *base = (char *)malloc(len + 1);
+
+	strncpy(base, path, len);
+	return base;
+}
+
 void err_with_pos(loc_t loc, const char *fmt, ...) {
 	char buf[256];
 	
@@ -12,7 +37,7 @@ void err_with_pos(loc_t loc, const char *fmt, ...) {
 	vsnprintf(buf, sizeof(buf), fmt, args);
 	va_end(args);
 
-	file_entry_t *file = &file_entries[loc.file];
+	fs_file_t *file = fs_filep(loc.file);
 
 	snprintf(err_diag.err_string, sizeof(err_diag.err_string), "%s:%u:%u: %s", file->fp, loc.line_nr + 1, loc.col + 1, buf);
 	longjmp(err_diag.unwind, 1);

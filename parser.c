@@ -60,16 +60,17 @@ struct parser_ctx_t {
 	u8 *pend;
 	u8 *plast_nl;
 	u32 line_nr;
-	rfile_t file;
 	token_t tok;
 	token_t peek;
-	hir_proc_t cproc;
 	parser_value_t es[128];
 	u32 es_len;
 	parser_scope_span_t ss[128];
 	u32 ss_len;
 	hir_rinst_t last_inst;
 	hir_rblock_t last_block;
+	hir_proc_t cproc;
+	fs_rfile_t file;
+	fs_rnode_t module;
 };
 
 // allocates using alloc_* functions
@@ -1141,15 +1142,16 @@ void parser_top_stmt() {
 	}
 }
 
-void file_parse(rfile_t file) {
-	file_entry_t *f = &file_entries[file];
+void parser_parse_file(fs_rfile_t file) {
+	fs_file_t *f = fs_filep(file);
 	
 	parser_ctx = (parser_ctx_t){
-		.file = file,
 		.pstart = f->data,
 		.pc = f->data,
 		.pend = f->data + f->len,
 		.plast_nl = f->data,
+		.file = file,
+		.module = f->module,
 	};
 
 	parser_next(); // tok

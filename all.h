@@ -45,13 +45,11 @@ static inline u32 ptrcpy(u8 *p, u8 *q, u32 len) {
 #define sv_cmp_literal(a, alen, b) sv_cmp(a, alen, (u8 *)b, sizeof(b "") - 1)
 
 typedef u32 istr_t;
-typedef u16 rfile_t;
 typedef u16 type_t;
 typedef struct typeinfo_t typeinfo_t;
 typedef enum typeinfo_kind_t typeinfo_kind_t;
 typedef struct token_t token_t;
 typedef struct loc_t loc_t;
-typedef struct file_entry_t file_entry_t;
 typedef struct err_diag_t err_diag_t;
 typedef enum tok_t tok_t;
 typedef enum hir_inst_kind_t hir_inst_kind_t;
@@ -62,14 +60,38 @@ typedef struct hir_inst_sym_data_t hir_inst_sym_data_t;
 typedef u32 hir_rlocal_t;
 typedef u32 hir_rinst_t;
 typedef u32 hir_rblock_t;
+typedef u32 fs_rfile_t;
+typedef u32 fs_rnode_t;
+typedef struct fs_file_t fs_file_t;
+
+const char *last_path(const char* path);
+const char *base_path(const char* path);
+
+bool is_our_ext(const char *fp);
+void fs_slurp_file(const char *p, fs_rnode_t mod);
+void fs_slurp_dir(fs_rnode_t ref);
+fs_rnode_t fs_register_root(const char *p, bool is_main);
+void fs_register_import(fs_rnode_t src, fs_rnode_t *path, u32 path_len, loc_t loc);
+fs_file_t *fs_filep(fs_rfile_t ref);
+void fs_dump_tree(void);
 
 #define TYPE_UNRESOLVED ((type_t)-1)
 
 istr_t sv_intern(u8 *sv, size_t len);
+istr_t sv_move(const char *p);
 const char *sv_from(istr_t str);
 
-bool file_slurp(FILE* file, const char *fp, rfile_t *handle);
-void file_parse(rfile_t file);
+void parser_parse_file(fs_rfile_t file);
+
+struct fs_file_t {
+	const char *fp;
+	u8 *data;
+	size_t len;
+	fs_rnode_t module;
+};
+
+extern u32 fs_files_queue_len;
+extern fs_file_t fs_files_queue[512];
 
 // TODO: make smaller?
 struct loc_t {
@@ -77,13 +99,7 @@ struct loc_t {
 	u32 col;
 	u32 pos;
 	u16 len;
-	rfile_t file;
-};
-
-struct file_entry_t {
-	const char *fp;
-	u8 *data;
-	size_t len;
+	fs_rfile_t file;
 };
 
 struct err_diag_t {
@@ -93,8 +109,6 @@ struct err_diag_t {
 	// loc_t err_loc;
 };
 
-extern size_t file_entry_count;
-extern file_entry_t file_entries[256];
 extern err_diag_t err_diag;
 
 void err_with_pos(loc_t loc, const char *fmt, ...)

@@ -17,9 +17,7 @@ static char *sv_to_cstring(u8 *str, size_t len) {
 	return result;
 }
 
-istr_t sv_intern(u8 *sv, size_t len) {
-	char *str = sv_to_cstring(sv, len);
-
+static istr_t _sv_intern(char *str) {
 	if (interns == NULL) {
 		sh_new_arena(interns);
 	}
@@ -34,6 +32,15 @@ istr_t sv_intern(u8 *sv, size_t len) {
 	assert(result >= 0 && (size_t)result <= UINT32_MAX);
 
 	return (u32)result;
+}
+
+istr_t sv_move(const char *p) {
+	return _sv_intern((char *)p);
+}
+
+istr_t sv_intern(u8 *sv, size_t len) {
+	char *str = sv_to_cstring(sv, len);
+	return _sv_intern(str);
 }
 
 const char *sv_from(istr_t str) {
