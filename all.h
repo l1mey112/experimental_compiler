@@ -26,6 +26,7 @@ typedef double f64;
 #endif
 
 #define eprintf(...) fprintf(stderr, __VA_ARGS__)
+#define eputs(v) fputs(v, stderr)
 
 #define MAYBE_UNUSED __attribute__((unused))
 #define ARRAYLEN(v) ((u32)(sizeof(v) / sizeof(*(v))))
@@ -44,26 +45,39 @@ static inline u32 ptrcpy(u8 *p, u8 *q, u32 len) {
 
 #define sv_cmp_literal(a, alen, b) sv_cmp(a, alen, (u8 *)b, sizeof(b "") - 1)
 
+// util
 typedef u32 istr_t;
+typedef struct err_diag_t err_diag_t;
+// types
 typedef u16 type_t;
 typedef struct typeinfo_t typeinfo_t;
 typedef enum typeinfo_kind_t typeinfo_kind_t;
+// symbols
+typedef u32 rsym_t;
+typedef struct sym_t sym_t;
+typedef enum sym_kind_t sym_kind_t;
+// token
 typedef struct token_t token_t;
 typedef struct loc_t loc_t;
-typedef struct err_diag_t err_diag_t;
 typedef enum tok_t tok_t;
-typedef enum pir_inst_kind_t pir_inst_kind_t;
-typedef struct pir_local_t pir_local_t;
+// PIR
+typedef struct pir_proc_t pir_proc_t;
 typedef struct pir_block_t pir_block_t;
+typedef struct pir_local_t pir_local_t;
 typedef struct pir_inst_t pir_inst_t;
+typedef enum pir_inst_kind_t pir_inst_kind_t;
 typedef struct pir_inst_sym_data_t pir_inst_sym_data_t;
 typedef u32 pir_rlocal_t;
 typedef u32 pir_rinst_t;
 typedef u32 pir_rblock_t;
+// module fs
 typedef u32 fs_rfile_t;
 typedef u32 fs_rnode_t;
 typedef struct fs_node_t fs_node_t;
 typedef struct fs_file_t fs_file_t;
+
+#define TYPE_UNRESOLVED ((type_t)-1)
+#define SYM_UNRESOLVED ((rsym_t)-1)
 
 const char *last_path(const char* path);
 const char *base_path(const char* path);
@@ -76,10 +90,9 @@ fs_rnode_t fs_register_root(const char *p, bool is_main, bool slurp);
 fs_rnode_t fs_register_import(fs_rnode_t src, fs_rnode_t *path, u32 path_len, loc_t loc);
 fs_file_t *fs_filep(fs_rfile_t ref);
 fs_node_t *fs_nodep(fs_rnode_t ref);
+const char *fs_module_symbol_sv(fs_rnode_t module, istr_t symbol);
 istr_t fs_module_symbol_str(fs_rnode_t module, istr_t symbol);
 void fs_dump_tree(void);
-
-#define TYPE_UNRESOLVED ((type_t)-1)
 
 istr_t sv_intern(u8 *sv, size_t len);
 istr_t sv_move(const char *p);
@@ -365,6 +378,8 @@ struct pir_block_t {
 	u32 len;
 };
 
+// TODO: PIR_TMP_LOCAL ?? (probably just allow compiler defined PIR_LOCALs)
+//
 // PIR_ARG   : function arguments.
 // PIR_SYM   : unresolved symbol. checker will resolve
 // PIR_LOCAL : resolved symbol in parsing phase, local.
@@ -374,24 +389,22 @@ enum pir_inst_kind_t {
 	PIR_ARG,
 	PIR_LOCAL,
 	PIR_SYM,
-	PIR_LOAD,
-	PIR_STORE,
+	PIR_LSTORE,
 	PIR_INTEGER_LITERAL,
 	PIR_ADDR_OF,
 	PIR_CALL,
 	PIR_RETURN,
 	PIR_PREFIX,
 	PIR_INFIX,
-	// pir_JMP,
+	// PIR_FIELD
 };
 
 struct pir_inst_sym_data_t {
-	enum _ {
-		pir_INST_RESOLVED_NONE,
-	} resv;
-	union {
-		istr_t lit; // TODO: rsym_t which stores the module and literal
-	} data;
+	rsym_t sym;
+	struct {
+		fs_rnode_t module;
+		istr_t lit;
+	} d_unresolved;
 };
 
 struct pir_inst_t {
@@ -399,52 +412,42 @@ struct pir_inst_t {
 	pir_rinst_t id;
 	loc_t loc;
 	type_t type; // -1 for none, TYPE_UNKNOWN is something else
-	bool is_lvalue;
 	
 	union {
-		pir_rlocal_t d_local; // pir_ARG, pir_LOCAL
-		pir_inst_sym_data_t d_sym; // pir_SYM
-		// pir_ADDR_OF
+		pir_rlocal_t d_local; // PIR_ARG, PIR_LOCAL
+		pir_inst_sym_data_t d_sym; // PIR_SYM
+		// PIR_ADDR_OF
 		struct {
 			pir_rinst_t src;
 			bool is_mut_ref;
 		} d_addr_of;
-		// pir_FIELD
-		struct {
-			istr_t field;
-			pir_rinst_t val;
-		} d_field;
-		// pir_LOAD
-		struct {
-			pir_rinst_t src;
-		} d_load;
-		// pir_STORE
+		// PIR_LSTORE
 		struct {
 			pir_rinst_t dest;
 			pir_rinst_t src;
 		} d_store;
-		// pir_PREFIX
+		// PIR_PREFIX
 		struct {
 			tok_t op;
 			pir_rinst_t val;
 		} d_prefix;
-		// pir_CALL
+		// PIR_CALL
 		struct {
 			tok_t op;
 			pir_rinst_t rhs;
 			pir_rinst_t lhs;
 		} d_infix;
-		// pir_INTEGER_LITERAL
+		// PIR_INTEGER_LITERAL
 		struct {
 			istr_t lit;
 			bool negate;
 		} d_literal;
-		// pir_RETURN
+		// PIR_RETURN
 		struct {
 			pir_rinst_t *ilist;
 			u16 ilen;
 		} d_return;
-		// pir_CALL
+		// PIR_CALL
 		struct {
 			pir_rinst_t target;
 			pir_rinst_t *ilist;
@@ -452,14 +455,6 @@ struct pir_inst_t {
 		} d_call;
 	};
 };
-
-typedef struct pir_inst_t pir_inst_t;
-typedef struct pir_proc_t pir_proc_t;
-typedef enum pir_inst_kind_t pir_inst_kind_t;
-
-typedef u32 rsym_t;
-typedef struct sym_t sym_t;
-typedef enum sym_kind_t sym_kind_t;
 
 enum sym_kind_t {
 	SYM_GLOBAL,

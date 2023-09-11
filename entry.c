@@ -25,7 +25,7 @@ int main(int argc, const char *argv[]) {
 	if (setjmp(err_diag.unwind)) {
 		// TODO: report error at proper area and print offending line
 		//       err_string is good enough for now
-		puts(err_diag.err_string);
+		eputs(err_diag.err_string);
 		retval = 1;
 		goto done;
 	}

@@ -11,6 +11,7 @@ typedef struct parser_value_t parser_value_t;
 typedef struct parser_scope_span_t parser_scope_span_t;
 typedef enum parser_value_type_t parser_value_type_t;
 typedef enum parser_value_inst_flags_t parser_value_inst_flags_t;
+typedef struct parser_import_t parser_import_t;
 
 enum parser_value_type_t {
 	VAL_INST,
@@ -54,6 +55,11 @@ struct parser_scope_span_t {
 	pir_rlocal_t end;
 };
 
+struct parser_import_t {
+	fs_rnode_t module;
+	istr_t name; // name of the module, in `import ... as name` as well
+};
+
 struct parser_ctx_t {
 	u8 *pstart;
 	u8 *pc;
@@ -62,10 +68,12 @@ struct parser_ctx_t {
 	u32 line_nr;
 	token_t tok;
 	token_t peek;
-	parser_value_t es[128];
+	parser_value_t es[128]; // expt stack
 	u32 es_len;
-	parser_scope_span_t ss[128];
+	parser_scope_span_t ss[128]; // scope stack
 	u32 ss_len;
+	parser_import_t is[64]; // import stack
+	u32 is_len;
 	pir_rinst_t last_inst;
 	pir_rblock_t last_block;
 	pir_proc_t cproc;
@@ -444,62 +452,9 @@ parser_value_t vpop_bottom() {
 	return parser_ctx.es[--parser_ctx.es_len];
 }
 
-/* pir_rinst_t vlocal_get(pir_rlocal_t rlocal, loc_t loc) {
-	pir_local_t *local = &parser_ctx.cproc.locals[rlocal];
-	
-	return parser_new_inst((pir_inst_t){
-		.kind = pir_LOCAL_GET,
-		.loc = loc,
-		.type = local->type,
-		.d_local.local = rlocal,
-	});
-}
-
-// `loc` is nullable, if NULL it will use the value's location
-pir_rinst_t vsym_get(parser_value_t value, loc_t *loc) {
-	assert(value.kind == VAL_SYM);
-	if (value.d_sym.resolved) {
-		// TODO: there are more things than a local after resolving...
-		return vlocal_get(value.d_sym.local, loc ? *loc : value.loc);
-	} else {
-		return parser_new_inst((pir_inst_t){
-			.kind = pir_LOCAL_GET,
-			.loc = value.loc,
-			.type = value.type, // don't need to read, it's usually the same
-			.d_sym.lit = value.d_sym.lit,
-		});
-	}
-}
-
-void vlocal_set(pir_rlocal_t rlocal, pir_rinst_t inst, loc_t loc) {
-	parser_new_inst((pir_inst_t){
-		.kind = pir_LOCAL_SET,
-		.loc = loc,
-		.type = TYPE_VOID,
-		.d_local_set.local = rlocal,
-		.d_local_set.src = inst,
-	});
-}
-
-pir_rinst_t vsym_set(pir_rlocal_t rlocal, parser_value_t value, loc_t loc) {
-	assert(value.kind == VAL_SYM);
-	if (value.d_sym.resolved) {
-		vlocal_set(value.d_sym.local, rlocal, loc);
-		return rlocal;
-	} else {
-		return parser_new_inst((pir_inst_t){
-			.kind = pir_LOCAL_SET,
-			.loc = loc,
-			.type = TYPE_VOID,
-			.d_sym_set.lit = value.d_sym.lit,
-			.d_sym_set.src = rlocal,
-		});
-	}
-} */
-
 pir_rinst_t vstore(pir_rinst_t dest, pir_rinst_t src, loc_t loc) {
 	return parser_new_inst((pir_inst_t){
-		.kind = PIR_STORE,
+		.kind = PIR_LSTORE,
 		.loc = loc,
 		.type = TYPE_VOID,
 		.d_store.dest = dest,
@@ -522,7 +477,6 @@ pir_rinst_t vemit(parser_value_t value) {
 				.loc = value.loc,
 				.type = value.type,
 				.d_sym = value.d_sym,
-				.is_lvalue = true,
 			});
 		}
 		case VAL_INTEGER_LITERAL:
@@ -594,7 +548,7 @@ void vpush_ilit(istr_t lit, loc_t loc, bool negate) {
 	};
 }
 
-void vpush_id(istr_t ident, loc_t loc) {
+void vpush_id(istr_t ident, fs_rnode_t module_ref, loc_t loc) {
 	assert(parser_ctx.es_len < ARRAYLEN(parser_ctx.es));
 
 	pir_rlocal_t rlocal = parser_locate_local(ident);
@@ -602,6 +556,8 @@ void vpush_id(istr_t ident, loc_t loc) {
 
 	parser_value_t val;
 	type_t type = rlocal == (pir_rlocal_t)-1 ? TYPE_UNRESOLVED : parser_ctx.cproc.locals[rlocal].type;
+
+	module_ref = module_ref == (fs_rnode_t)-1 ? parser_ctx.module : module_ref;
 
 	if (resolved) {
 		val = (parser_value_t){
@@ -615,10 +571,11 @@ void vpush_id(istr_t ident, loc_t loc) {
 			.kind = VAL_SYM,
 			.loc = loc,
 			.type = type,
-			.d_sym.resv = pir_INST_RESOLVED_NONE,
-			.d_sym.data.lit = ident,
+			.d_sym.sym = SYM_UNRESOLVED,
+			.d_sym.d_unresolved.module = module_ref,
+			.d_sym.d_unresolved.lit = ident,
 		};
-	}	
+	}
 
 	parser_ctx.es[parser_ctx.es_len++] = val;
 }
@@ -729,11 +686,37 @@ void vcast(type_t type, loc_t loc) {
 	assert(0 && "TODO: emit");
 }
 
+// -1 for not found
+int parser_import_ident(istr_t name) {
+	for (u32 i = 0; i < parser_ctx.is_len; i++) {
+		if (parser_ctx.is[i].name == name) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+void parser_parse_ident(void) {
+	loc_t loc = parser_ctx.tok.loc;
+
+	// is imported ident
+	int id;
+	if ((id = parser_import_ident(parser_ctx.tok.lit)) != -1) {
+		parser_next();
+		parser_expect(TOK_DOT);
+		istr_t ref = parser_ctx.tok.lit;
+		parser_expect(TOK_IDENT); // TODO: istr_t span
+		vpush_id(ref, parser_ctx.is[id].module, loc);
+	} else {
+		vpush_id(parser_ctx.tok.lit, -1, loc);
+		parser_next();
+	}
+}
+
 void parser_expr(u8 prec) {
 	switch (parser_ctx.tok.type) {
 		case TOK_IDENT:
-			vpush_id(parser_ctx.tok.lit, parser_ctx.tok.loc);
-			parser_next();
+			parser_parse_ident();
 			break;
 		case TOK_OPAR:
 			parser_next();
@@ -784,7 +767,6 @@ void parser_expr(u8 prec) {
 
 				parser_next();
 				while (parser_ctx.tok.type != TOK_CPAR) {
-					eprintf("go!\n");
 					parser_expr(0);
 					if (parser_ctx.tok.type == TOK_COMMA) {
 						parser_next();
@@ -885,7 +867,6 @@ void parser_stmt() {
 			.loc = name_loc,
 			.type = type,
 			.d_local = id,
-			.is_lvalue = true,
 		});
 		parser_new_local((pir_local_t){
 			.name = name,
@@ -926,7 +907,7 @@ void parser_stmt() {
 			parser_new_inst((pir_inst_t){
 				.kind = PIR_RETURN,
 				.loc = loc,
-				.type = TYPE_VOID,
+				.type = TYPE_NORETURN, // TODO: should reveal **OBVIOUS** unreachable code errors inside the parser? probably not...
 				.d_return.ilist = retl,
 				.d_return.ilen = retc,
 			});
@@ -1035,9 +1016,8 @@ fparsed:
 		arg.inst = parser_new_inst((pir_inst_t){
 			.kind = PIR_ARG,
 			.loc = arg_loc,
-			.type = TYPE_VOID, // TODO: see pir_LOCAL too. is a type necessary?
+			.type = TYPE_VOID,
 			.d_local = args,
-			.is_lvalue = true,
 		});
 		// will be added to scope stack
 		parser_new_local(arg);
@@ -1161,7 +1141,25 @@ void parser_top_stmt() {
 			// commit
 			alloc_scratch(fields_len * sizeof(istr_t));
 			{
-				(void)fs_register_import(parser_ctx.module, fields, fields_len, path_loc);
+				fs_rnode_t module = fs_register_import(parser_ctx.module, fields, fields_len, path_loc);
+				istr_t module_ident = fields[fields_len - 1];
+
+				// check duplicate import
+				for (u32 i = 0; i < parser_ctx.is_len; i++) {
+					parser_import_t *is = &parser_ctx.is[i];
+					if (is->module == module) {
+						err_with_pos(path_loc, "error: duplicate import");
+					} else if (is->name == module_ident) {
+						err_with_pos(path_loc, "error: import name `%s` already used", sv_from(module_ident));
+					}
+				}
+
+				// insert import
+				assert(parser_ctx.is_len < ARRAYLEN(parser_ctx.is));
+				parser_ctx.is[parser_ctx.is_len++] = (parser_import_t){
+					.module = module,
+					.name = module_ident, // TODO: import ... as ...
+				};
 			}
 			alloc_reset((u8 *)fields);
 			break;

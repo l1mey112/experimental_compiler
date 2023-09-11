@@ -255,7 +255,8 @@ static u32 _fs_module_symbol_str_conv(fs_rnode_t module, u8 *p) {
 	return nwritten;
 }
 
-istr_t fs_module_symbol_str(fs_rnode_t module, istr_t symbol) {
+// symbol can be -1
+const char *fs_module_symbol_sv(fs_rnode_t module, istr_t symbol) {
 	// module: mod1.mod2.mod3 <-- follow chain from mod3
 	// symbol: add()
 	// return: mod1.mod2.mod3.add
@@ -263,11 +264,22 @@ istr_t fs_module_symbol_str(fs_rnode_t module, istr_t symbol) {
 	u8 *p = alloc_scratch(0);
 
 	u32 nwritten = _fs_module_symbol_str_conv(module, p);
-	p[nwritten++] = '.';
-	const char *sv = sv_from(symbol);
-	nwritten += ptrcpy(p + nwritten, (u8 *)sv, strlen(sv));
+	if (symbol != (istr_t)-1) {
+		p[nwritten++] = '.';
+		const char *sv = sv_from(symbol);
+		nwritten += ptrcpy(p + nwritten, (u8 *)sv, strlen(sv));
+	}
+	p[nwritten++] = '\0';
+	(void)alloc_scratch(nwritten);
 
-	return sv_intern(p, nwritten);
+	return (const char *)p;
+}
+
+istr_t fs_module_symbol_str(fs_rnode_t module, istr_t symbol) {
+	const char *p = fs_module_symbol_sv(module, symbol);
+	istr_t intern = sv_intern((u8*)p, strlen(p));
+	alloc_reset((u8*)p);
+	return intern;
 }
 
 static const char *_path_to_str(istr_t *path, u32 path_len) {
@@ -326,7 +338,9 @@ fs_rnode_t fs_register_import(fs_rnode_t src, fs_rnode_t *path, u32 path_len, lo
 	if (fs_node_arena[found].our_files == 0) {
 		err_with_pos(loc, "error: module `%s` has no files", _path_to_str(path, path_len));
 	}
-	
+	if (fs_node_arena[found].is_src_scanned) {
+		return found;
+	}
 	fs_slurp_dir(found);
 	return found;
 }

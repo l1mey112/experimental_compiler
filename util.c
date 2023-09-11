@@ -111,7 +111,7 @@ static void _padding_to_size(u32 line_len) {
 static const char *_inst_str(pir_proc_t *proc, pir_rinst_t inst) {
 	char *s = (char *)alloc_scratch(0);
 
-	u32 len = sprintf(s, "%%%u%s", proc->insts[inst].id, proc->insts[inst].is_lvalue ? ":l" : "");
+	u32 len = sprintf(s, "%%%u", proc->insts[inst].id);
 
 	return (const char *)alloc_scratch(len + 1);
 }
@@ -124,7 +124,8 @@ static void _dump_inst(pir_proc_t *proc, pir_inst_t *inst) {
 		eprintf("%%%-3u = ", inst->id);
 	} */
 	u32 line_len = 0;
-	if (inst->kind != PIR_STORE && inst->kind != PIR_RETURN) {
+	// if (inst->kind != PIR_LSTORE && inst->kind != PIR_RETURN) {
+	if (!(inst->type == TYPE_VOID || inst->type == TYPE_NORETURN)) {
 		line_len += eprintf("%s = ", _inst_str(proc, inst->id));
 	}
 	switch (inst->kind) {
@@ -142,26 +143,15 @@ static void _dump_inst(pir_proc_t *proc, pir_inst_t *inst) {
 			eprintf("; def %s%s: %s\n", local->is_mut ? "mut " : "", sv_from(local->name), type_dbg_str(local->type));
 			break;
 		}
-		/* case PIR_SYM:
-			if (inst->d_sym.resv == pir_INST_RESOLVED_LOCAL) {
-				pir_local_t *local = &proc->locals[inst->d_sym.data.local];
-				line_len += eprintf("sym(%s)", sv_from(local->name));
-				_padding_to_size(line_len);
-				if (local->is_arg) {
-					eprintf("; arg%u %s: %s\n", local->inst, sv_from(local->name), type_dbg_str(local->type));
-				} else {
-					eprintf("; %s%s: %s\n", local->is_mut ? "mut " : "", sv_from(local->name), type_dbg_str(local->type));
-				}
-			} else {
-				eprintf("sym(%s)\n", sv_from(inst->d_sym.data.lit));
-			}
-			break; */
 		case PIR_SYM:
-			eprintf("sym(%s)\n", sv_from(inst->d_sym.data.lit));
-		case PIR_LOAD:
-			eprintf("load %s\n", _inst_str(proc, inst->d_load.src));
+			if (inst->d_sym.sym == (rsym_t)-1) {
+				eprintf("sym(%s, %s)\n", fs_module_symbol_sv(inst->d_sym.d_unresolved.module, -1), sv_from(inst->d_sym.d_unresolved.lit));
+			} else {
+				assert(0 && "TODO: implementing repr of resolved symbols");
+				// eprintf("sym(%s)\n", fs_module_symbol_sv(inst->d_sym.d_unresolved.module, inst->d_sym.d_unresolved.lit));
+			}
 			break;
-		case PIR_STORE:
+		case PIR_LSTORE:
 			eprintf("store %s, %s\n", _inst_str(proc, inst->d_store.dest), _inst_str(proc, inst->d_store.src));
 			break;
 		case PIR_INTEGER_LITERAL:
