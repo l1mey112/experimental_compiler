@@ -34,6 +34,9 @@ const char *base_path(const char* path) {
 }
 
 const char *make_relative(const char *cwd, const char *path) {
+	if (strlen(cwd) > strlen(path)) {
+		return path;
+	}
 	while (*cwd != '\0' && *cwd == *path) {
 		cwd++;
 		path++;
