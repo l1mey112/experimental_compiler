@@ -108,7 +108,7 @@ static void _padding_to_size(u32 line_len) {
 	}
 }
 
-static const char *_inst_str(hir_proc_t *proc, hir_rinst_t inst) {
+static const char *_inst_str(pir_proc_t *proc, pir_rinst_t inst) {
 	char *s = (char *)alloc_scratch(0);
 
 	u32 len = sprintf(s, "%%%u%s", proc->insts[inst].id, proc->insts[inst].is_lvalue ? ":l" : "");
@@ -117,67 +117,67 @@ static const char *_inst_str(hir_proc_t *proc, hir_rinst_t inst) {
 }
 
 // TODO: insert types? if the value is `void` no need to assign
-static void _dump_inst(hir_proc_t *proc, hir_inst_t *inst) {
+static void _dump_inst(pir_proc_t *proc, pir_inst_t *inst) {
 	/* if (inst->type == TYPE_VOID) {
 		eprintf("     = ");
 	} else {
 		eprintf("%%%-3u = ", inst->id);
 	} */
 	u32 line_len = 0;
-	if (inst->kind != HIR_STORE && inst->kind != HIR_RETURN) {
+	if (inst->kind != PIR_STORE && inst->kind != PIR_RETURN) {
 		line_len += eprintf("%s = ", _inst_str(proc, inst->id));
 	}
 	switch (inst->kind) {
-		case HIR_ARG: {
-			hir_local_t *local = &proc->locals[inst->d_local];
+		case PIR_ARG: {
+			pir_local_t *local = &proc->locals[inst->d_local];
 			line_len += eprintf("arg(%u)", inst->d_local);
 			_padding_to_size(line_len);
-			eprintf("; def %s: %s\n", sv_from(local->name), table_type_dbg_str(local->type));
+			eprintf("; def %s: %s\n", sv_from(local->name), type_dbg_str(local->type));
 			break;
 		}
-		case HIR_LOCAL: {
-			hir_local_t *local = &proc->locals[inst->d_local];
+		case PIR_LOCAL: {
+			pir_local_t *local = &proc->locals[inst->d_local];
 			line_len += eprintf("local(%u)", inst->d_local);
 			_padding_to_size(line_len);
-			eprintf("; def %s%s: %s\n", local->is_mut ? "mut " : "", sv_from(local->name), table_type_dbg_str(local->type));
+			eprintf("; def %s%s: %s\n", local->is_mut ? "mut " : "", sv_from(local->name), type_dbg_str(local->type));
 			break;
 		}
-		/* case HIR_SYM:
-			if (inst->d_sym.resv == HIR_INST_RESOLVED_LOCAL) {
-				hir_local_t *local = &proc->locals[inst->d_sym.data.local];
+		/* case PIR_SYM:
+			if (inst->d_sym.resv == pir_INST_RESOLVED_LOCAL) {
+				pir_local_t *local = &proc->locals[inst->d_sym.data.local];
 				line_len += eprintf("sym(%s)", sv_from(local->name));
 				_padding_to_size(line_len);
 				if (local->is_arg) {
-					eprintf("; arg%u %s: %s\n", local->inst, sv_from(local->name), table_type_dbg_str(local->type));
+					eprintf("; arg%u %s: %s\n", local->inst, sv_from(local->name), type_dbg_str(local->type));
 				} else {
-					eprintf("; %s%s: %s\n", local->is_mut ? "mut " : "", sv_from(local->name), table_type_dbg_str(local->type));
+					eprintf("; %s%s: %s\n", local->is_mut ? "mut " : "", sv_from(local->name), type_dbg_str(local->type));
 				}
 			} else {
 				eprintf("sym(%s)\n", sv_from(inst->d_sym.data.lit));
 			}
 			break; */
-		case HIR_SYM:
+		case PIR_SYM:
 			eprintf("sym(%s)\n", sv_from(inst->d_sym.data.lit));
-		case HIR_LOAD:
+		case PIR_LOAD:
 			eprintf("load %s\n", _inst_str(proc, inst->d_load.src));
 			break;
-		case HIR_STORE:
+		case PIR_STORE:
 			eprintf("store %s, %s\n", _inst_str(proc, inst->d_store.dest), _inst_str(proc, inst->d_store.src));
 			break;
-		case HIR_INTEGER_LITERAL:
+		case PIR_INTEGER_LITERAL:
 			if (inst->d_literal.negate) {
 				eprintf("-%s\n", sv_from(inst->d_literal.lit));
 			} else {
 				eprintf("%s\n", sv_from(inst->d_literal.lit));
 			}
 			break;
-		case HIR_INFIX:
+		case PIR_INFIX:
 			eprintf("%s %s %s\n", _inst_str(proc, inst->d_infix.lhs), tok_literal_representation(inst->d_infix.op), _inst_str(proc, inst->d_infix.rhs));
 			break;
-		case HIR_PREFIX:
+		case PIR_PREFIX:
 			eprintf("%s %s\n", tok_literal_representation(inst->d_prefix.op), _inst_str(proc, inst->d_prefix.val));
 			break;
-		case HIR_CALL:
+		case PIR_CALL:
 			eprintf("call %s(", _inst_str(proc, inst->d_call.target));
 			for (u32 i = 0; i < inst->d_call.ilen; i++) {
 				eprintf("%s", _inst_str(proc, inst->d_call.ilist[i]));
@@ -187,7 +187,7 @@ static void _dump_inst(hir_proc_t *proc, hir_inst_t *inst) {
 			}
 			eprintf(")\n");
 			break;
-		case HIR_RETURN:
+		case PIR_RETURN:
 			eprintf("return");
 			for (u32 i = 0; i < inst->d_return.ilen; i++) {
 				eprintf(" %s", _inst_str(proc, inst->d_return.ilist[i]));
@@ -202,16 +202,16 @@ static void _dump_inst(hir_proc_t *proc, hir_inst_t *inst) {
 	}
 }
 
-void dump_proc(hir_proc_t *proc) {
+void dump_proc(pir_proc_t *proc) {
 	u8 *sc = alloc_scratch(0);
 
-	eprintf("%s: %s\n", sv_from(proc->name), table_type_dbg_str(proc->type));
+	eprintf("%s: %s\n", sv_from(proc->name), type_dbg_str(proc->type));
 
-	for (hir_rblock_t i = 0; i < arrlenu(proc->blocks); i++) {
-		hir_block_t *block = &proc->blocks[i];
+	for (pir_rblock_t i = 0; i < arrlenu(proc->blocks); i++) {
+		pir_block_t *block = &proc->blocks[i];
 		eprintf("%u:\n", i);
-		for (hir_rinst_t j = block->first; j < block->first + block->len; j++) {
-			hir_inst_t *inst = &proc->insts[j];
+		for (pir_rinst_t j = block->first; j < block->first + block->len; j++) {
+			pir_inst_t *inst = &proc->insts[j];
 
 			eprintf("\t");
 			_dump_inst(proc, inst);

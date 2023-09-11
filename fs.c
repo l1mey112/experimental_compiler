@@ -233,6 +233,43 @@ static fs_rnode_t _fs_locate_node(fs_rnode_t src, istr_t *path, u32 path_len) {
 	return src;
 }
 
+static u32 _fs_is_root(fs_rnode_t module) {
+	for (u32 i = 0; i < fs_node_roots_len; i++) {
+		if (fs_node_roots[i] == module) {
+			return true;
+		}
+	}
+	return false;
+}
+
+static u32 _fs_module_symbol_str_conv(fs_rnode_t module, u8 *p) {
+	u32 nwritten = 0;
+	fs_node_t *node = &fs_node_arena[module];
+	if (node->parent != (fs_rnode_t)-1 && !_fs_is_root(node->parent)) {
+		nwritten = _fs_module_symbol_str_conv(node->parent, p);
+		p += nwritten;
+		*p++ = '.', nwritten++;
+	}
+	const char *sv = sv_from(node->name);
+	nwritten += ptrcpy(p, (u8 *)sv, strlen(sv));
+	return nwritten;
+}
+
+istr_t fs_module_symbol_str(fs_rnode_t module, istr_t symbol) {
+	// module: mod1.mod2.mod3 <-- follow chain from mod3
+	// symbol: add()
+	// return: mod1.mod2.mod3.add
+
+	u8 *p = alloc_scratch(0);
+
+	u32 nwritten = _fs_module_symbol_str_conv(module, p);
+	p[nwritten++] = '.';
+	const char *sv = sv_from(symbol);
+	nwritten += ptrcpy(p + nwritten, (u8 *)sv, strlen(sv));
+
+	return sv_intern(p, nwritten);
+}
+
 static const char *_path_to_str(istr_t *path, u32 path_len) {
 	u8 *p = alloc_scratch(0);
 	u8 *po = p;

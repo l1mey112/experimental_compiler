@@ -17,6 +17,10 @@ static char *sv_to_cstring(u8 *str, size_t len) {
 	return result;
 }
 
+// TODO: this API is inconsistent
+//       for `sv_intern`, check if the string is already interned
+//       don't clone every time.
+
 static istr_t _sv_intern(char *str) {
 	if (interns == NULL) {
 		sh_new_arena(interns);
@@ -47,3 +51,9 @@ const char *sv_from(istr_t str) {
 	assert(str >= 0 && str < shlen(interns));
 	return interns[str].key;
 }
+
+#define sv_sprintf(u8ptr_name, len_name, fmt, ...) \
+	size_t len_name; \
+	u8 *u8ptr_name = alloc_scratch(0); \
+	len_name = sprintf((char *)u8ptr_name, fmt, __VA_ARGS__); \
+	(void)alloc_scratch(len_name)

@@ -52,14 +52,14 @@ typedef struct token_t token_t;
 typedef struct loc_t loc_t;
 typedef struct err_diag_t err_diag_t;
 typedef enum tok_t tok_t;
-typedef enum hir_inst_kind_t hir_inst_kind_t;
-typedef struct hir_local_t hir_local_t;
-typedef struct hir_block_t hir_block_t;
-typedef struct hir_inst_t hir_inst_t;
-typedef struct hir_inst_sym_data_t hir_inst_sym_data_t;
-typedef u32 hir_rlocal_t;
-typedef u32 hir_rinst_t;
-typedef u32 hir_rblock_t;
+typedef enum pir_inst_kind_t pir_inst_kind_t;
+typedef struct pir_local_t pir_local_t;
+typedef struct pir_block_t pir_block_t;
+typedef struct pir_inst_t pir_inst_t;
+typedef struct pir_inst_sym_data_t pir_inst_sym_data_t;
+typedef u32 pir_rlocal_t;
+typedef u32 pir_rinst_t;
+typedef u32 pir_rblock_t;
 typedef u32 fs_rfile_t;
 typedef u32 fs_rnode_t;
 typedef struct fs_node_t fs_node_t;
@@ -76,6 +76,7 @@ fs_rnode_t fs_register_root(const char *p, bool is_main, bool slurp);
 fs_rnode_t fs_register_import(fs_rnode_t src, fs_rnode_t *path, u32 path_len, loc_t loc);
 fs_file_t *fs_filep(fs_rfile_t ref);
 fs_node_t *fs_nodep(fs_rnode_t ref);
+istr_t fs_module_symbol_str(fs_rnode_t module, istr_t symbol);
 void fs_dump_tree(void);
 
 #define TYPE_UNRESOLVED ((type_t)-1)
@@ -135,7 +136,6 @@ void err_without_pos(const char *fmt, ...)
 
 #define TOK_X_KEYWORDS_LIST \
 	X(TOK_FN, "fn") \
-	X(TOK_EXTERN, "extern") \
 	X(TOK_ASM, "asm") \
 	X(TOK_AS, "as") \
 	X(TOK_RETURN, "return") \
@@ -145,7 +145,8 @@ void err_without_pos(const char *fmt, ...)
 	X(TOK_FOR, "for") \
 	X(TOK_BREAK, "break") \
 	X(TOK_CONTINUE, "continue") \
-	X(TOK_IMPORT, "import")
+	X(TOK_IMPORT, "import") \
+	X(TOK_PUB, "pub")
 
 // in specific order due to how operators are parsed
 #define TOK_X_OPERATOR_LIST \
@@ -325,10 +326,10 @@ struct typeinfo_t {
 	}; */
 };
 
-type_t table_new(typeinfo_t typeinfo);
-typeinfo_t *table_get(type_t type);
-type_t table_new_inc_mul(type_t type);
-const char *table_type_dbg_str(type_t type);
+type_t type_new(typeinfo_t typeinfo);
+typeinfo_t *type_get(type_t type);
+type_t type_new_inc_mul(type_t type);
+const char *type_dbg_str(type_t type);
 
 // TODO: discrepancy
 //       function arguments aren't locals in the normal sense, they're immutable value insts
@@ -336,125 +337,151 @@ const char *table_type_dbg_str(type_t type);
 //       okay, fuck! their address is taken.
 //       variables should be declared using new var to take part in liveness too
 
-struct hir_local_t {
+struct pir_local_t {
 	istr_t name;
 	loc_t name_loc;
 	type_t type;
 	loc_t type_loc;
 	bool is_arg;
 	bool is_mut;
-	hir_rinst_t inst;
+	pir_rinst_t inst;
 };
 
-struct hir_proc_t {
+struct pir_proc_t {
 	istr_t name;
 	loc_t name_loc;
 	type_t type;
 	u16 args;
 	u16 rets;
-	hir_rblock_t entry;
-	hir_local_t *locals;
-	hir_block_t *blocks;
-	hir_inst_t *insts;
-	bool is_extern;
+	pir_rblock_t entry;
+	pir_local_t *locals;
+	pir_block_t *blocks;
+	pir_inst_t *insts;
 };
 
-struct hir_block_t {
-	hir_rblock_t id;
-	hir_rinst_t first;
+struct pir_block_t {
+	pir_rblock_t id;
+	pir_rinst_t first;
 	u32 len;
 };
 
-// HIR_ARG   : function arguments.
-// HIR_SYM   : unresolved symbol. checker will resolve
-// HIR_LOCAL : resolved symbol in parsing phase, local.
+// PIR_ARG   : function arguments.
+// PIR_SYM   : unresolved symbol. checker will resolve
+// PIR_LOCAL : resolved symbol in parsing phase, local.
 //
-enum hir_inst_kind_t {
-	HIR_NOP,
-	HIR_ARG,
-	HIR_LOCAL,
-	HIR_SYM,
-	HIR_LOAD,
-	HIR_STORE,
-	HIR_INTEGER_LITERAL,
-	HIR_ADDR_OF,
-	HIR_CALL,
-	HIR_RETURN,
-	HIR_PREFIX,
-	HIR_INFIX,
-	// HIR_JMP,
+enum pir_inst_kind_t {
+	PIR_NOP,
+	PIR_ARG,
+	PIR_LOCAL,
+	PIR_SYM,
+	PIR_LOAD,
+	PIR_STORE,
+	PIR_INTEGER_LITERAL,
+	PIR_ADDR_OF,
+	PIR_CALL,
+	PIR_RETURN,
+	PIR_PREFIX,
+	PIR_INFIX,
+	// pir_JMP,
 };
 
-struct hir_inst_sym_data_t {
+struct pir_inst_sym_data_t {
 	enum _ {
-		HIR_INST_RESOLVED_NONE,
+		pir_INST_RESOLVED_NONE,
 	} resv;
 	union {
 		istr_t lit; // TODO: rsym_t which stores the module and literal
 	} data;
 };
 
-struct hir_inst_t {
-	hir_inst_kind_t kind;
-	hir_rinst_t id;
+struct pir_inst_t {
+	pir_inst_kind_t kind;
+	pir_rinst_t id;
 	loc_t loc;
 	type_t type; // -1 for none, TYPE_UNKNOWN is something else
 	bool is_lvalue;
 	
 	union {
-		hir_rlocal_t d_local; // HIR_ARG, HIR_LOCAL
-		hir_inst_sym_data_t d_sym; // HIR_SYM
-		// HIR_ADDR_OF
+		pir_rlocal_t d_local; // pir_ARG, pir_LOCAL
+		pir_inst_sym_data_t d_sym; // pir_SYM
+		// pir_ADDR_OF
 		struct {
-			hir_rinst_t src;
+			pir_rinst_t src;
 			bool is_mut_ref;
 		} d_addr_of;
-		// HIR_FIELD
+		// pir_FIELD
 		struct {
 			istr_t field;
-			hir_rinst_t val;
+			pir_rinst_t val;
 		} d_field;
-		// HIR_LOAD
+		// pir_LOAD
 		struct {
-			hir_rinst_t src;
+			pir_rinst_t src;
 		} d_load;
-		// HIR_STORE
+		// pir_STORE
 		struct {
-			hir_rinst_t dest;
-			hir_rinst_t src;
+			pir_rinst_t dest;
+			pir_rinst_t src;
 		} d_store;
-		// HIR_PREFIX
+		// pir_PREFIX
 		struct {
 			tok_t op;
-			hir_rinst_t val;
+			pir_rinst_t val;
 		} d_prefix;
-		// HIR_CALL
+		// pir_CALL
 		struct {
 			tok_t op;
-			hir_rinst_t rhs;
-			hir_rinst_t lhs;
+			pir_rinst_t rhs;
+			pir_rinst_t lhs;
 		} d_infix;
-		// HIR_INTEGER_LITERAL
+		// pir_INTEGER_LITERAL
 		struct {
 			istr_t lit;
 			bool negate;
 		} d_literal;
-		// HIR_RETURN
+		// pir_RETURN
 		struct {
-			hir_rinst_t *ilist;
+			pir_rinst_t *ilist;
 			u16 ilen;
 		} d_return;
-		// HIR_CALL
+		// pir_CALL
 		struct {
-			hir_rinst_t target;
-			hir_rinst_t *ilist;
+			pir_rinst_t target;
+			pir_rinst_t *ilist;
 			u16 ilen;
 		} d_call;
 	};
 };
 
-typedef struct hir_inst_t hir_inst_t;
-typedef struct hir_proc_t hir_proc_t;
-typedef enum hir_inst_kind_t hir_inst_kind_t;
+typedef struct pir_inst_t pir_inst_t;
+typedef struct pir_proc_t pir_proc_t;
+typedef enum pir_inst_kind_t pir_inst_kind_t;
 
-void dump_proc(hir_proc_t *proc);
+typedef u32 rsym_t;
+typedef struct sym_t sym_t;
+typedef enum sym_kind_t sym_kind_t;
+
+enum sym_kind_t {
+	SYM_GLOBAL,
+	SYM_CONST,
+	SYM_PROC,
+};
+
+struct sym_t {
+	istr_t key;
+	sym_kind_t kind;
+	type_t type;
+	fs_rnode_t module;
+	loc_t name_loc;
+	bool is_pub;
+	union {
+		pir_proc_t proc;
+	};
+};
+
+rsym_t table_new(sym_t sym);
+sym_t *table_get(rsym_t rsym);
+void table_dump(bool list_ir);
+
+// TODO: move to table.c?
+void dump_proc(pir_proc_t *proc);

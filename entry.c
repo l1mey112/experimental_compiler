@@ -74,6 +74,7 @@ int main(int argc, const char *argv[]) {
 done:
 
 	fs_dump_tree();
+	table_dump(true);
 
 	return retval;
 }
