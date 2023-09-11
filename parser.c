@@ -780,7 +780,7 @@ void parser_expr(u8 prec) {
 				// commit
 				(void)alloc_scratch(cc * sizeof(pir_rinst_t));
 
-				parser_new_inst((pir_inst_t){
+				pir_rinst_t inst = parser_new_inst((pir_inst_t){
 					.kind = PIR_CALL,
 					.loc = target_v.loc,
 					.type = TYPE_UNKNOWN, // TODO: resolve...
@@ -788,6 +788,7 @@ void parser_expr(u8 prec) {
 					.d_call.ilist = cl,
 					.d_call.ilen = cc,
 				});
+				vpush_inst_back(inst);
 				break;
 			}
 			case TOK_INC:
