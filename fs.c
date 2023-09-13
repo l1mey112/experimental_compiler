@@ -139,9 +139,9 @@ static fs_rnode_t _fs_make_directory(const char *path, fs_rnode_t parent, bool r
 	fs_rnode_t *children = NULL;
 
 	while ((entry = readdir(dir)) != NULL) {
-		if (entry->d_name[0] == '.') {
+		if (entry->d_name[0] == '.' && entry->d_name[1] == '.' && entry->d_name[2] == '\0') {
 			continue;
-		} else if (entry->d_name[0] != '\0' && entry->d_name[1] == '.') {
+		} else if (entry->d_name[0] == '.' && entry->d_name[1] == '\0') {
 			continue;
 		}
 
@@ -173,6 +173,10 @@ static fs_rnode_t _fs_make_directory(const char *path, fs_rnode_t parent, bool r
 	node->our_files = our_files;
 	node->children = children;
 	node->children_len = arrlen(children);
+
+	if (closedir(dir)) {
+		err_without_pos("error: failed to close directory '%s' - %s\n", node->path, strerror(errno));
+	}
 
 	return ref;
 }
@@ -288,6 +292,9 @@ static const char *_path_to_str(istr_t *path, u32 path_len) {
 	for (u32 i = 0; i < path_len; i++) {
 		const char *sv = sv_from(path[i]);
 		p += ptrcpy(p, (u8 *)sv, strlen(sv));
+		if (i + 1 < path_len) {
+			*p++ = '.';
+		}
 	}
 	*p = '\0';
 	alloc_scratch(p - po + 1);

@@ -26,7 +26,7 @@ typedef double f64;
 #endif
 
 #define eprintf(...) fprintf(stderr, __VA_ARGS__)
-#define eputs(v) fputs(v, stderr)
+#define eputs(v) fputs(v, stderr); fputc('\n', stderr)
 
 #define MAYBE_UNUSED __attribute__((unused))
 #define ARRAYLEN(v) ((u32)(sizeof(v) / sizeof(*(v))))
