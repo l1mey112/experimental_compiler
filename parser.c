@@ -38,7 +38,7 @@ struct parser_value_t {
 	type_t type; // -1 for none, TYPE_UNKNOWN is something else
 
 	union {
-		pir_inst_sym_data_t d_sym;
+		sym_resolve_t d_sym;
 		struct {
 			istr_t lit;
 			bool negate;
@@ -1017,7 +1017,7 @@ fparsed:
 		arg.inst = parser_new_inst((pir_inst_t){
 			.kind = PIR_ARG,
 			.loc = arg_loc,
-			.type = TYPE_VOID,
+			.type = type,
 			.d_local = args,
 		});
 		// will be added to scope stack

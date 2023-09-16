@@ -41,6 +41,9 @@ int main(int argc, const char *argv[]) {
 	}
 
 	// list `lib` directory as a root
+	// ISSUES:
+	//   lib will be imported twice if the root path is below lib/
+	//   use realpath to test for this
 	{
 		const char *exe_path = relative_path_of_exe();
 		char *lib_path;

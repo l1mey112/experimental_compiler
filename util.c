@@ -145,7 +145,7 @@ static void _dump_inst(pir_proc_t *proc, pir_inst_t *inst) {
 		}
 		case PIR_SYM:
 			if (inst->d_sym.sym == (rsym_t)-1) {
-				eprintf("sym(%s, %s)\n", fs_module_symbol_sv(inst->d_sym.d_unresolved.module, -1), sv_from(inst->d_sym.d_unresolved.lit));
+				eprintf("sym_unresolved(%s.%s)\n", fs_module_symbol_sv(inst->d_sym.d_unresolved.module, -1), sv_from(inst->d_sym.d_unresolved.lit));
 			} else {
 				assert(0 && "TODO: implementing repr of resolved symbols");
 				// eprintf("sym(%s)\n", fs_module_symbol_sv(inst->d_sym.d_unresolved.module, inst->d_sym.d_unresolved.lit));

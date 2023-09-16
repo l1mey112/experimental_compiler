@@ -1,5 +1,0 @@
-import sub
-
-fn main(a: i32) {
-    b: i32 = sub.sub(a + 10)
-}

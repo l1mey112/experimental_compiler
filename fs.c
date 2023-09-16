@@ -91,9 +91,10 @@ void fs_slurp_dir(fs_rnode_t ref) {
 	struct stat statbuf;
 
 	while ((entry = readdir(dir)) != NULL) {
+		// .
+		// ..
+		// .git
 		if (entry->d_name[0] == '.') {
-			continue;
-		} else if (entry->d_name[0] != '\0' && entry->d_name[1] == '.') {
 			continue;
 		}
 
@@ -139,9 +140,10 @@ static fs_rnode_t _fs_make_directory(const char *path, fs_rnode_t parent, bool r
 	fs_rnode_t *children = NULL;
 
 	while ((entry = readdir(dir)) != NULL) {
-		if (entry->d_name[0] == '.' && entry->d_name[1] == '.' && entry->d_name[2] == '\0') {
-			continue;
-		} else if (entry->d_name[0] == '.' && entry->d_name[1] == '\0') {
+		// .
+		// ..
+		// .git
+		if (entry->d_name[0] == '.') {
 			continue;
 		}
 

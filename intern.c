@@ -38,6 +38,11 @@ static istr_t _sv_intern(char *str) {
 	return (u32)result;
 }
 
+// -1 for error
+ptrdiff_t sv_index(const char *p) {
+	return shgeti(interns, (char *)p);
+}
+
 istr_t sv_move(const char *p) {
 	return _sv_intern((char *)p);
 }

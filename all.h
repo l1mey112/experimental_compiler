@@ -2,7 +2,7 @@
 
 #include <stdio.h>
 #include <stdint.h>
-#include <sys/types.h>
+#include <stddef.h>
 #include <stdbool.h>
 #include <assert.h>
 #include <setjmp.h>
@@ -66,7 +66,7 @@ typedef struct pir_block_t pir_block_t;
 typedef struct pir_local_t pir_local_t;
 typedef struct pir_inst_t pir_inst_t;
 typedef enum pir_inst_kind_t pir_inst_kind_t;
-typedef struct pir_inst_sym_data_t pir_inst_sym_data_t;
+typedef struct sym_resolve_t sym_resolve_t;
 typedef u32 pir_rlocal_t;
 typedef u32 pir_rinst_t;
 typedef u32 pir_rblock_t;
@@ -97,6 +97,7 @@ void fs_dump_tree(void);
 istr_t sv_intern(u8 *sv, size_t len);
 istr_t sv_move(const char *p);
 const char *sv_from(istr_t str);
+ptrdiff_t sv_index(const char *p);
 
 void parser_parse_file(fs_rfile_t file);
 
@@ -399,9 +400,9 @@ enum pir_inst_kind_t {
 	// PIR_FIELD
 };
 
-struct pir_inst_sym_data_t {
+struct sym_resolve_t {
 	rsym_t sym;
-	struct {
+	struct unresolved_t {
 		fs_rnode_t module;
 		istr_t lit;
 	} d_unresolved;
@@ -415,7 +416,7 @@ struct pir_inst_t {
 	
 	union {
 		pir_rlocal_t d_local; // PIR_ARG, PIR_LOCAL
-		pir_inst_sym_data_t d_sym; // PIR_SYM
+		sym_resolve_t d_sym; // PIR_SYM
 		// PIR_ADDR_OF
 		struct {
 			pir_rinst_t src;
@@ -476,6 +477,8 @@ struct sym_t {
 
 rsym_t table_new(sym_t sym);
 sym_t *table_get(rsym_t rsym);
+rsym_t table_retrieve_field(fs_rnode_t mod, istr_t lit);
+bool table_resolve(sym_resolve_t *resolve, fs_rnode_t src_module, loc_t loc);
 void table_dump(bool list_ir);
 
 // TODO: move to table.c?
