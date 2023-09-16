@@ -358,7 +358,6 @@ struct pir_local_t {
 	loc_t type_loc;
 	bool is_arg;
 	bool is_mut;
-	pir_rinst_t inst;
 };
 
 struct pir_proc_t {
@@ -387,9 +386,10 @@ struct pir_block_t {
 //
 enum pir_inst_kind_t {
 	PIR_NOP,
-	PIR_ARG,
-	PIR_LOCAL,
-	PIR_SYM,
+	// PIR_ARG,
+	// PIR_LOCAL,
+	// PIR_SYM,
+	PIR_LLOAD,
 	PIR_LSTORE,
 	PIR_INTEGER_LITERAL,
 	PIR_ADDR_OF,
@@ -415,8 +415,6 @@ struct pir_inst_t {
 	type_t type; // -1 for none, TYPE_UNKNOWN is something else
 	
 	union {
-		pir_rlocal_t d_local; // PIR_ARG, PIR_LOCAL
-		sym_resolve_t d_sym; // PIR_SYM
 		// PIR_ADDR_OF
 		struct {
 			pir_rinst_t src;
@@ -424,9 +422,21 @@ struct pir_inst_t {
 		} d_addr_of;
 		// PIR_LSTORE
 		struct {
-			pir_rinst_t dest;
+			union {
+				pir_rlocal_t local;
+				sym_resolve_t sym;
+			};
 			pir_rinst_t src;
+			bool is_sym;
 		} d_store;
+		// PIR_LLOAD
+		struct {
+			union {
+				pir_rlocal_t local;
+				sym_resolve_t sym;
+			};
+			bool is_sym;
+		} d_load;
 		// PIR_PREFIX
 		struct {
 			tok_t op;

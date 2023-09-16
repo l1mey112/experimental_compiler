@@ -100,7 +100,42 @@ void alloc_reset(u8 *p) {
 	scratch_p = p;
 }
 
-#define LINE_LEN_PADDING 20
+#define LINE_LEN_PADDING 40
+
+static const char *_local_str(pir_proc_t *proc, pir_rlocal_t local) {
+	char *s = (char *)alloc_scratch(0);
+
+	// local = local(0)
+	//         arg(0)
+
+	u32 len;
+	if (proc->locals[local].is_arg) {
+		len = sprintf(s, "arg(%u)", local);
+	} else {
+		len = sprintf(s, "local(%u)", local);
+	}
+
+	return (const char *)alloc_scratch(len + 1);
+}
+
+static const char *_sym_str(sym_resolve_t sym) {
+	// HAH, nice error idiot. two functions trying to use the same scratch buffer
+	// fixed, used to be `alloc_scratch(0)`
+	char *s = (char *)alloc_scratch(256);
+
+	// sym = main.main
+	// local = local(0)
+	//         arg(0)
+
+	if (sym.sym == (rsym_t)-1) {
+		snprintf(s, 256, "sym_unresolved(%s)", fs_module_symbol_sv(sym.d_unresolved.module, sym.d_unresolved.lit));
+	} else {
+		assert(0 && "TODO: implementing repr of resolved symbols");
+		// eprintf("sym(%s)\n", fs_module_symbol_sv(inst->d_sym.d_unresolved.module, inst->d_sym.d_unresolved.lit));
+	}
+
+	return s;
+}
 
 static void _padding_to_size(u32 line_len) {
 	if (line_len < LINE_LEN_PADDING) {
@@ -129,7 +164,7 @@ static void _dump_inst(pir_proc_t *proc, pir_inst_t *inst) {
 		line_len += eprintf("%s = ", _inst_str(proc, inst->id));
 	}
 	switch (inst->kind) {
-		case PIR_ARG: {
+		/* case PIR_ARG: {
 			pir_local_t *local = &proc->locals[inst->d_local];
 			line_len += eprintf("arg(%u)", inst->d_local);
 			_padding_to_size(line_len);
@@ -150,10 +185,29 @@ static void _dump_inst(pir_proc_t *proc, pir_inst_t *inst) {
 				assert(0 && "TODO: implementing repr of resolved symbols");
 				// eprintf("sym(%s)\n", fs_module_symbol_sv(inst->d_sym.d_unresolved.module, inst->d_sym.d_unresolved.lit));
 			}
+			break; */
+		case PIR_LLOAD: {
+			const char *lstr = inst->d_load.is_sym ? _sym_str(inst->d_load.sym) : _local_str(proc, inst->d_load.local);
+			line_len += eprintf("load %s", lstr);
+			if (!inst->d_load.is_sym) {
+				_padding_to_size(line_len);
+				eprintf("; def %s%s: %s\n", proc->locals[inst->d_load.local].is_mut ? "mut " : "", sv_from(proc->locals[inst->d_load.local].name), type_dbg_str(proc->locals[inst->d_load.local].type));
+			} else {
+				eprintf("\n");
+			}
 			break;
-		case PIR_LSTORE:
-			eprintf("store %s, %s\n", _inst_str(proc, inst->d_store.dest), _inst_str(proc, inst->d_store.src));
+		}
+		case PIR_LSTORE: {
+			const char *sstr = inst->d_store.is_sym ? _sym_str(inst->d_store.sym) : _local_str(proc, inst->d_store.local);
+			line_len += eprintf("store %s, %s", sstr, _inst_str(proc, inst->d_store.src));
+			if (!inst->d_store.is_sym) {
+				_padding_to_size(line_len);
+				eprintf("; def %s%s: %s\n", proc->locals[inst->d_store.local].is_mut ? "mut " : "", sv_from(proc->locals[inst->d_store.local].name), type_dbg_str(proc->locals[inst->d_store.local].type));
+			} else {
+				eprintf("\n");
+			}
 			break;
+		}
 		case PIR_INTEGER_LITERAL:
 			if (inst->d_literal.negate) {
 				eprintf("-%s\n", sv_from(inst->d_literal.lit));
@@ -205,8 +259,8 @@ void dump_proc(pir_proc_t *proc) {
 
 			eprintf("\t");
 			_dump_inst(proc, inst);
+			// reset
+			alloc_reset(sc);
 		}
 	}
-
-	alloc_reset(sc);
 }

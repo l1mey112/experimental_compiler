@@ -16,6 +16,7 @@ typedef struct parser_import_t parser_import_t;
 enum parser_value_type_t {
 	VAL_INST,
 	VAL_SYM,
+	VAL_LOCAL,
 	VAL_INTEGER_LITERAL,
 	// VAL_FLOAT_LITERAL,
 };
@@ -39,6 +40,7 @@ struct parser_value_t {
 
 	union {
 		sym_resolve_t d_sym;
+		pir_rlocal_t d_local;
 		struct {
 			istr_t lit;
 			bool negate;
@@ -412,19 +414,23 @@ pir_rlocal_t parser_locate_local(istr_t ident) {
 	return -1;
 };
 
-void parser_new_local(pir_local_t local) {
+pir_rlocal_t parser_new_local(pir_local_t local) {
 	// make sure var doesn't already exist
 	pir_rlocal_t rlocal = parser_locate_local(local.name);
 	if (rlocal != (pir_rlocal_t)-1) {
 		err_with_pos(local.name_loc, "redefinition of variable `%s` in same scope", sv_from(local.name));
 		// err_with_pos(parser_ctx.cproc.locals[rlocal].loc, "previous definition was here");
+	} else {
+		rlocal = arrlenu(parser_ctx.cproc.locals);
 	}
-	
+
 	parser_ctx.ss[parser_ctx.ss_len - 1].end++;
 	arrpush(parser_ctx.cproc.locals, local);
-	
+
 	// TODO: should be fine to remove...
 	assert(parser_ctx.ss[parser_ctx.ss_len - 1].end == arrlenu(parser_ctx.cproc.locals));
+
+	return rlocal;
 }
 
 void parser_push_scope() {
@@ -452,14 +458,37 @@ parser_value_t vpop_bottom() {
 	return parser_ctx.es[--parser_ctx.es_len];
 }
 
-pir_rinst_t vstore(pir_rinst_t dest, pir_rinst_t src, loc_t loc) {
+pir_rinst_t vstore_local(pir_rlocal_t dest, pir_rinst_t src, loc_t loc) {
 	return parser_new_inst((pir_inst_t){
 		.kind = PIR_LSTORE,
 		.loc = loc,
 		.type = TYPE_VOID,
-		.d_store.dest = dest,
+		.d_store.local = dest,
 		.d_store.src = src,
+		.d_store.is_sym = false,
 	});
+}
+
+pir_rinst_t vstore_sym(sym_resolve_t dest, pir_rinst_t src, loc_t loc) {
+	return parser_new_inst((pir_inst_t){
+		.kind = PIR_LSTORE,
+		.loc = loc,
+		.type = TYPE_VOID,
+		.d_store.sym = dest,
+		.d_store.src = src,
+		.d_store.is_sym = true,
+	});
+}
+
+pir_rinst_t vstore(parser_value_t dest, pir_rinst_t src, loc_t loc) {
+	switch (dest.kind) {
+		case VAL_SYM:
+			return vstore_sym(dest.d_sym, src, loc);
+		case VAL_LOCAL:
+			return vstore_local(dest.d_local, src, loc);
+		default:
+			err_with_pos(dest.loc, "cannot assign to this");
+	}
 }
 
 pir_rinst_t vemit(parser_value_t value) {
@@ -473,10 +502,20 @@ pir_rinst_t vemit(parser_value_t value) {
 	switch (value.kind) {
 		case VAL_SYM: {
 			return parser_new_inst((pir_inst_t){
-				.kind = PIR_SYM,
+				.kind = PIR_LLOAD,
 				.loc = value.loc,
 				.type = value.type,
-				.d_sym = value.d_sym,
+				.d_load.is_sym = true,
+				.d_load.sym = value.d_sym,
+			});
+		}
+		case VAL_LOCAL: {
+			return parser_new_inst((pir_inst_t){
+				.kind = PIR_LLOAD,
+				.loc = value.loc,
+				.type = value.type,
+				.d_load.is_sym = false,
+				.d_load.local = value.d_local,
 			});
 		}
 		case VAL_INTEGER_LITERAL:
@@ -561,10 +600,10 @@ void vpush_id(istr_t ident, fs_rnode_t module_ref, loc_t loc) {
 
 	if (resolved) {
 		val = (parser_value_t){
-			.kind = VAL_INST,
+			.kind = VAL_LOCAL,
 			.loc = loc,
 			.type = type,
-			.d_inst.inst = parser_ctx.cproc.locals[rlocal].inst, // TODO: ---------- HERE
+			.d_local = rlocal,
 		};
 	} else {
 		val = (parser_value_t){
@@ -630,11 +669,10 @@ void vinfix(tok_t tok, loc_t loc) {
 
 	pir_rinst_t inst;
 
-	pir_rinst_t ilhs = vemit(lhs);
 	pir_rinst_t irhs = vemit(rhs);
 
 	if (tok != TOK_ASSIGN) {
-		
+		pir_rinst_t ilhs = vemit(lhs);
 		inst = parser_new_inst((pir_inst_t){
 			.loc = loc,
 			.type = TYPE_UNRESOLVED,
@@ -648,7 +686,7 @@ void vinfix(tok_t tok, loc_t loc) {
 	} else {
 		// assign expressions do actually return the value
 		// but must be reloaded for use in further expressions
-		vstore(ilhs, irhs, loc);
+		vstore(lhs, irhs, loc);
 		vpush_inst(irhs, loc);
 	}
 }
@@ -804,11 +842,11 @@ void parser_expr(u8 prec) {
 				vinfix(token.type == TOK_INC ? TOK_ADD : TOK_SUB, token.loc);
 				pir_rinst_t result = vemit(vpop());
 				// vsym_set(result, sym, token.loc);
-				vstore(oval, result, token.loc);
+				vstore(sym, result, token.loc);
 
 				// %0 = sym
 				// %1 = %0 + 1
-				//      store(%0, %1)
+				//      store(sym, %1)
 				// << %0
 				vpush_inst_back(oval);
 				break;
@@ -862,26 +900,18 @@ void parser_stmt() {
 			err_with_pos(name_loc, "immutable variables must have an initial value");
 		}
 
-		pir_rlocal_t id = arrlenu(parser_ctx.cproc.locals);		
-		pir_rinst_t inst = parser_new_inst((pir_inst_t){
-			.kind = PIR_LOCAL,
-			.loc = name_loc,
-			.type = type,
-			.d_local = id,
-		});
-		parser_new_local((pir_local_t){
+		pir_rlocal_t local = parser_new_local((pir_local_t){
 			.name = name,
 			.name_loc = name_loc,
 			.type = type,
 			.type_loc = type_loc,
-			.inst = inst,
 			.is_mut = is_mut,
 		});
 
 		if (has_init) {
 			parser_value_t val = vpop_bottom();
 			pir_rinst_t ival = vemit(val);
-			vstore(inst, ival, name_loc); // TODO: the loc_t should span the whole expression...
+			vstore_local(local, ival, name_loc); // TODO: the loc_t should span the whole expression...
 		}
 
 		return;
@@ -1014,12 +1044,6 @@ fparsed:
 			}
 		}
 
-		arg.inst = parser_new_inst((pir_inst_t){
-			.kind = PIR_ARG,
-			.loc = arg_loc,
-			.type = type,
-			.d_local = args,
-		});
 		// will be added to scope stack
 		parser_new_local(arg);
 		arg_types[args++] = type; // insert
