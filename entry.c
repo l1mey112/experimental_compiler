@@ -73,6 +73,7 @@ int main(int argc, const char *argv[]) {
 			eprintf("  %u new files added\n", fs_files_queue_len - old_sz);
 		}
 	}
+	check_all();
 	retval = 0;
 done:
 

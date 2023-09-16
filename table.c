@@ -2,7 +2,7 @@
 
 #include "stb_ds.h"
 
-static sym_t *table = NULL;
+sym_t *table = NULL;
 
 rsym_t table_new(sym_t sym) {
 	if (sym.key >= 0) {
@@ -12,13 +12,6 @@ rsym_t table_new(sym_t sym) {
 	hmputs(table, sym);
 
 	return (rsym_t)hmlenu(table) - 1;
-}
-
-// warning: this is an unstable pointer,
-//          but that shouldn't matter after parsing.
-sym_t *table_get(rsym_t rsym) {
-	assert(rsym >= 0 && rsym < hmlenu(table)); // TODO: probably safe to remove? ASAN gets to this first
-	return &table[rsym];
 }
 
 // returns SYM_UNRESOLVED if not found
@@ -52,7 +45,7 @@ bool table_resolve(sym_resolve_t *resolve, fs_rnode_t src_module, loc_t loc) {
 	if ((sym = table_retrieve_field(resolve->d_unresolved.module, resolve->d_unresolved.lit)) == SYM_UNRESOLVED) {
 		err_with_pos(loc, "error: unresolved symbol `%s`", sv_from(resolve->d_unresolved.lit));
 	}
-	sym_t *symp = table_get(sym);
+	sym_t *symp = &table[sym];
 	if (symp->module != src_module && !symp->is_pub) {
 		err_with_pos(loc, "error: symbol `%s` is not public in module `%s`", sv_from(resolve->d_unresolved.lit), fs_module_symbol_sv(src_module, (istr_t)-1));
 	}
@@ -63,7 +56,7 @@ bool table_resolve(sym_resolve_t *resolve, fs_rnode_t src_module, loc_t loc) {
 
 void table_dump(bool list_ir) {
 	for (rsym_t i = 0; i < hmlenu(table); i++) {
-		sym_t *sym = table_get(i);
+		sym_t *sym = &table[i];
 
 		if (sym->key < 0) {
 			continue;

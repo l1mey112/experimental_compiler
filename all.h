@@ -485,11 +485,13 @@ struct sym_t {
 	};
 };
 
+extern sym_t *table;
 rsym_t table_new(sym_t sym);
-sym_t *table_get(rsym_t rsym);
 rsym_t table_retrieve_field(fs_rnode_t mod, istr_t lit);
 bool table_resolve(sym_resolve_t *resolve, fs_rnode_t src_module, loc_t loc);
 void table_dump(bool list_ir);
 
 // TODO: move to table.c?
 void dump_proc(pir_proc_t *proc);
+
+void check_all(void);

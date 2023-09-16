@@ -100,7 +100,7 @@ void alloc_reset(u8 *p) {
 	scratch_p = p;
 }
 
-#define LINE_LEN_PADDING 40
+#define LINE_LEN_PADDING 30
 
 static const char *_local_str(pir_proc_t *proc, pir_rlocal_t local) {
 	char *s = (char *)alloc_scratch(0);
@@ -128,7 +128,7 @@ static const char *_sym_str(sym_resolve_t sym) {
 	//         arg(0)
 
 	if (sym.sym == (rsym_t)-1) {
-		snprintf(s, 256, "sym_unresolved(%s)", fs_module_symbol_sv(sym.d_unresolved.module, sym.d_unresolved.lit));
+		snprintf(s, 256, "%s", fs_module_symbol_sv(sym.d_unresolved.module, sym.d_unresolved.lit));
 	} else {
 		assert(0 && "TODO: implementing repr of resolved symbols");
 		// eprintf("sym(%s)\n", fs_module_symbol_sv(inst->d_sym.d_unresolved.module, inst->d_sym.d_unresolved.lit));
@@ -187,13 +187,19 @@ static void _dump_inst(pir_proc_t *proc, pir_inst_t *inst) {
 			}
 			break; */
 		case PIR_LLOAD: {
-			const char *lstr = inst->d_load.is_sym ? _sym_str(inst->d_load.sym) : _local_str(proc, inst->d_load.local);
-			line_len += eprintf("load %s", lstr);
-			if (!inst->d_load.is_sym) {
+			line_len += eprintf("load ");
+			if (inst->d_load.is_sym) {
+				line_len += eprintf("%s", fs_module_symbol_sv(inst->d_load.sym.d_unresolved.module, inst->d_load.sym.d_unresolved.lit));
+				_padding_to_size(line_len);
+				if (inst->d_load.sym.sym == SYM_UNRESOLVED) {
+					eprintf("; unresolved\n");
+				} else {
+					assert(0 && "TODO: implementing repr of resolved symbols");
+				}
+			} else {
+				line_len += eprintf("%s", _local_str(proc, inst->d_load.local));
 				_padding_to_size(line_len);
 				eprintf("; def %s%s: %s\n", proc->locals[inst->d_load.local].is_mut ? "mut " : "", sv_from(proc->locals[inst->d_load.local].name), type_dbg_str(proc->locals[inst->d_load.local].type));
-			} else {
-				eprintf("\n");
 			}
 			break;
 		}
