@@ -7,3 +7,9 @@ fn set_test(): i32 {
     a: i32 = add(10, v)
     return a
 }
+
+fn boolean() {
+    if (a) {
+        
+    }
+}

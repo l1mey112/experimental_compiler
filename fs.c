@@ -41,7 +41,7 @@ bool is_our_ext(const char *fp) {
 // there are upsides and downsides to using a mmap approach.
 // it doesn't matter to me one bit, i used mmap in stas.
 // these files are small and PROT_READ, i assume the kernel would do some magic anyway.
-// mmapping is infinitely more elegant than reading the file into memory through f* calls	
+// mmapping is infinitely more elegant than reading the file into memory through f* calls
 static void _fs_slurp_file_with_size(const char *p, fs_rnode_t module, size_t size) {
 	void *ptr = NULL;
 

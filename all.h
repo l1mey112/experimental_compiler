@@ -375,6 +375,7 @@ struct pir_proc_t {
 struct pir_block_t {
 	pir_rblock_t id;
 	pir_rinst_t first;
+	pir_rinst_t last;
 	u32 len;
 };
 
@@ -398,6 +399,8 @@ enum pir_inst_kind_t {
 	PIR_PREFIX,
 	PIR_INFIX,
 	// PIR_FIELD
+	PIR_JMP,
+	PIR_IF,
 };
 
 struct sym_resolve_t {
@@ -411,6 +414,8 @@ struct sym_resolve_t {
 struct pir_inst_t {
 	pir_inst_kind_t kind;
 	pir_rinst_t id;
+	pir_rinst_t next;
+	pir_rinst_t prev;
 	loc_t loc;
 	type_t type; // -1 for none, TYPE_UNKNOWN is something else
 	
@@ -464,8 +469,24 @@ struct pir_inst_t {
 			pir_rinst_t *ilist;
 			u16 ilen;
 		} d_call;
+		// PIR_JMP
+		pir_rblock_t d_jmp;
+		// PIR_IF
+		struct {
+			pir_rinst_t cond;
+			pir_rblock_t on_true;
+			pir_rblock_t on_false;
+		} d_if;
 	};
 };
+
+pir_inst_t *pir_at(pir_proc_t *proc, pir_rinst_t inst);
+pir_rinst_t pir_insert_after(pir_proc_t *proc, pir_rblock_t bb_ref, pir_rinst_t at, pir_inst_t inst);
+pir_rinst_t pir_insert_before(pir_proc_t *proc, pir_rblock_t bb_ref, pir_rinst_t at, pir_inst_t inst);
+pir_rinst_t pir_insert(pir_proc_t *proc, pir_rblock_t bb_ref, pir_inst_t inst);
+void pir_delete(pir_proc_t *proc, pir_rblock_t bb_ref, pir_rinst_t at);
+pir_inst_t pir_pop(pir_proc_t *proc, pir_rblock_t bb_ref, pir_rinst_t at);
+pir_rblock_t pir_new_block(pir_proc_t *proc);
 
 enum sym_kind_t {
 	SYM_GLOBAL,
