@@ -277,6 +277,15 @@ exit:
 	return;
 }
 
+u32 parser_search_loop_scope() {
+	for (u32 i = parser_ctx.ss_len; i--;) {
+		if (parser_ctx.ss[i].kind == SCOPE_LOOP) {
+			return i;
+		}
+	}
+	return (u32)-1;
+}
+
 u32 parser_search_label(istr_t label_name) {
 	// search backwards, even though labels can't be shadowed
 	for (u32 i = parser_ctx.ss_len; i--;) {
@@ -444,6 +453,7 @@ void parser_break_continue(pir_rblock_t bb) {
 	loc_t key_loc = parser_ctx.tok.loc;
 
 	pir_rblock_t jmp_target;
+	u32 scope;
 
 	parser_next();
 	if (parser_ctx.tok.type == TOK_COLON) {
@@ -451,24 +461,24 @@ void parser_break_continue(pir_rblock_t bb) {
 		loc_t loc = parser_ctx.tok.loc;
 		istr_t label = parser_ctx.tok.lit;
 		parser_expect(TOK_IDENT);
-		u32 scope;
 		if ((scope = parser_search_label(label)) == (u32)-1) {
 			err_with_pos(loc, "label `%s` not found", sv_from(label));
 		}
-
-		jmp_target = is_break ? parser_ctx.ss[scope].pred : parser_ctx.ss[scope].bb;
-		
-		// emit
-		parser_inew(bb, (pir_inst_t){
-			.kind = PIR_JMP,
-			.loc = key_loc,
-			.type = TYPE_NORETURN,
-			.d_jmp = jmp_target,
-		});
 	} else {
-		// TODO: impl loop break continue
-		assert_not_reached();
+		if ((scope = parser_search_loop_scope()) == (u32)-1) {
+			err_with_pos(key_loc, "no enclosing loop");
+		}
 	}
+
+	jmp_target = is_break ? parser_ctx.ss[scope].pred : parser_ctx.ss[scope].bb;
+
+	// emit
+	parser_inew(bb, (pir_inst_t){
+		.kind = PIR_JMP,
+		.loc = key_loc,
+		.type = TYPE_NORETURN,
+		.d_jmp = jmp_target,
+	});
 }
 
 // while () : () {}
