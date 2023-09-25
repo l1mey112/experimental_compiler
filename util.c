@@ -151,8 +151,23 @@ static const char *_inst_str(pir_proc_t *proc, pir_rinst_t inst) {
 	return (const char *)alloc_scratch(len + 1);
 }
 
+typedef struct { pir_rblock_t key; } rinst_marker_t;
+
+typedef struct {
+	rinst_marker_t *marker_map;
+	pir_rblock_t *queue;
+} marker_ctx_t;
+
+static void _ctx_add(marker_ctx_t *ctx, pir_rblock_t inst) {
+	ptrdiff_t result = hmgeti(ctx->marker_map, inst);
+	if (result == -1) {
+		hmputs(ctx->marker_map, (rinst_marker_t){.key = inst});
+		arrpush(ctx->queue, inst);
+	}
+}
+
 // TODO: insert types? if the value is `void` no need to assign
-static void _dump_inst(pir_proc_t *proc, pir_inst_t *inst) {
+static void _dump_inst(marker_ctx_t *ctx, pir_proc_t *proc, pir_inst_t *inst) {
 	/* if (inst->type == TYPE_VOID) {
 		eprintf("     = ");
 	} else {
@@ -165,7 +180,7 @@ static void _dump_inst(pir_proc_t *proc, pir_inst_t *inst) {
 	}
 	switch (inst->kind) {
 		case PIR_LLOAD: {
-			line_len += eprintf("load ");
+			/* line_len += eprintf("load ");
 			if (inst->d_load.is_sym) {
 				line_len += eprintf("%s", fs_module_symbol_sv(inst->d_load.sym.d_unresolved.module, inst->d_load.sym.d_unresolved.lit));
 				_padding_to_size(line_len);
@@ -175,9 +190,17 @@ static void _dump_inst(pir_proc_t *proc, pir_inst_t *inst) {
 					assert(0 && "TODO: implementing repr of resolved symbols");
 				}
 			} else {
-				line_len += eprintf("%s", _local_str(proc, inst->d_load.local));
-				_padding_to_size(line_len);
-				eprintf("; def %s%s: %s\n", proc->locals[inst->d_load.local].is_mut ? "mut " : "let ", sv_from(proc->locals[inst->d_load.local].name), type_dbg_str(proc->locals[inst->d_load.local].type));
+				assert(0 && "TODO: what");
+			}
+			break; */
+			const char *sstr = inst->d_load.is_sym ? _sym_str(inst->d_load.sym) : _local_str(proc, inst->d_load.local);
+			line_len += eprintf("load %s", sstr);
+			if (!inst->d_load.is_sym) {
+				// _padding_to_size(line_len);
+				// eprintf("; def %s%s: %s\n", proc->locals[inst->d_load.local].is_mut ? "mut " : "let ", sv_from(proc->locals[inst->d_load.local].name), type_dbg_str(proc->locals[inst->d_store.local].type));
+				eprintf("\n");
+			} else {
+				eprintf("\n");
 			}
 			break;
 		}
@@ -185,8 +208,9 @@ static void _dump_inst(pir_proc_t *proc, pir_inst_t *inst) {
 			const char *sstr = inst->d_store.is_sym ? _sym_str(inst->d_store.sym) : _local_str(proc, inst->d_store.local);
 			line_len += eprintf("store %s, %s", sstr, _inst_str(proc, inst->d_store.src));
 			if (!inst->d_store.is_sym) {
-				_padding_to_size(line_len);
-				eprintf("; def %s%s: %s\n", proc->locals[inst->d_store.local].is_mut ? "mut " : "let ", sv_from(proc->locals[inst->d_store.local].name), type_dbg_str(proc->locals[inst->d_store.local].type));
+				// _padding_to_size(line_len);
+				// eprintf("; def %s%s: %s\n", proc->locals[inst->d_store.local].is_mut ? "mut " : "let ", sv_from(proc->locals[inst->d_store.local].name), type_dbg_str(proc->locals[inst->d_store.local].type));
+				eprintf("\n");
 			} else {
 				eprintf("\n");
 			}
@@ -226,9 +250,12 @@ static void _dump_inst(pir_proc_t *proc, pir_inst_t *inst) {
 			eprintf("\n");
 			break;
 		case PIR_JMP:
+			_ctx_add(ctx, inst->d_jmp);
 			eprintf("jmp :%u\n", inst->d_jmp);
 			break;
 		case PIR_IF:
+			_ctx_add(ctx, inst->d_if.on_false);
+			_ctx_add(ctx, inst->d_if.on_true);
 			eprintf("if %s goto :%u else :%u\n", _inst_str(proc, inst->d_if.cond), inst->d_if.on_true, inst->d_if.on_false);
 			break;
 		default:
@@ -236,27 +263,44 @@ static void _dump_inst(pir_proc_t *proc, pir_inst_t *inst) {
 	}
 }
 
-void dump_proc(pir_proc_t *proc) {
+static void _dump_block(marker_ctx_t *ctx, pir_proc_t *proc, pir_rblock_t i) {
 	u8 *sc = alloc_scratch(0);
+
+	pir_block_t *block = &proc->blocks[i];
+	eprintf("%u:\n", i);
+
+	// iterate over linked list
+	u32 dbg_size = 0;
+	for (pir_rinst_t j = block->first; j != (pir_rinst_t)-1; j = proc->insts[j].next) {
+		pir_inst_t *inst = &proc->insts[j];
+
+		eprintf("\t");
+		_dump_inst(ctx, proc, inst);
+		// reset
+		alloc_reset(sc);
+		dbg_size++;
+	}
+	assert(dbg_size == block->len && "block->len is incorrect");
+}
+
+void dump_proc(pir_proc_t *proc) {
 
 	eprintf("%s: %s\n", sv_from(proc->name), type_dbg_str(proc->type));
 
-	for (pir_rblock_t i = 0; i < arrlenu(proc->blocks); i++) {
-		pir_block_t *block = &proc->blocks[i];
-		eprintf("%u:\n", i);
+	// will be used to print out blocks in a nice stacky way
+	marker_ctx_t ctx = {};
 
-		// iterate over linked list
-		u32 dbg_size = 0;
-		for (pir_rinst_t j = block->first; j != (pir_rinst_t)-1; j = proc->insts[j].next) {
-			pir_inst_t *inst = &proc->insts[j];
+	_ctx_add(&ctx, 0); // add start
+	while (arrlenu(ctx.queue) > 0) {
+		pir_rblock_t i = arrpop(ctx.queue); // will memcpy everything, but fuckit this queue works for now
+		_dump_block(&ctx, proc, i);
+	}
 
-			eprintf("\t");
-			_dump_inst(proc, inst);
-			// reset
-			alloc_reset(sc);
-			dbg_size++;
+	// iterate over unreachable blocks
+	for (u32 i = 0; i < arrlenu(proc->blocks); i++) {
+		if (hmgeti(ctx.marker_map, i) == -1) {
+			_dump_block(&ctx, proc, i);
 		}
-		assert(dbg_size == block->len && "block->len is incorrect");
 	}
 }
 
