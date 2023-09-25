@@ -210,10 +210,9 @@ void vinfix(pir_rblock_t bb, tok_t tok, loc_t loc) {
 
 	pir_rinst_t inst;
 
-	pir_rinst_t irhs = vemit(bb, rhs);
-
 	if (tok != TOK_ASSIGN) {
 		pir_rinst_t ilhs = vemit(bb, lhs);
+		pir_rinst_t irhs = vemit(bb, rhs);
 		inst = parser_inew(bb, (pir_inst_t){
 			.loc = loc,
 			.type = TYPE_UNRESOLVED,
@@ -225,6 +224,7 @@ void vinfix(pir_rblock_t bb, tok_t tok, loc_t loc) {
 
 		vpush_inst(inst, loc);
 	} else {
+		pir_rinst_t irhs = vemit(bb, rhs);
 		// assign expressions do actually return the value
 		// but must be reloaded for use in further expressions
 		vstore(bb, lhs, irhs, loc);

@@ -515,7 +515,28 @@ pir_rblock_t parser_stmt(pir_rblock_t bb) {
 			return bb;
 		}
 		case TOK_RETURN: {
-			assert_not_reached();
+			loc_t loc = parser_ctx.tok.loc;
+
+			pir_rinst_t *retl = (pir_rinst_t *)alloc_scratch(0);
+			u32 retc = 0;
+
+			parser_next();
+			do {
+				parser_expr(bb, 0);
+				retl[retc++] = vemit(bb, vpop());
+			} while (parser_ctx.tok.type == TOK_COMMA);
+
+			// commit
+			// lets just hope expr() doesn't allocate too
+			(void)alloc_scratch(retc * sizeof(pir_rinst_t));
+
+			parser_inew(bb, (pir_inst_t){
+				.kind = PIR_RETURN,
+				.loc = loc,
+				.type = TYPE_NORETURN, // TODO: should reveal **OBVIOUS** unreachable code errors inside the parser? probably not...
+				.d_return.ilist = retl,
+				.d_return.ilen = retc,
+			});
 			return bb;
 		}
 		default:
