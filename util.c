@@ -164,28 +164,6 @@ static void _dump_inst(pir_proc_t *proc, pir_inst_t *inst) {
 		line_len += eprintf("%s = ", _inst_str(proc, inst->id));
 	}
 	switch (inst->kind) {
-		/* case PIR_ARG: {
-			pir_local_t *local = &proc->locals[inst->d_local];
-			line_len += eprintf("arg(%u)", inst->d_local);
-			_padding_to_size(line_len);
-			eprintf("; def %s: %s\n", sv_from(local->name), type_dbg_str(local->type));
-			break;
-		}
-		case PIR_LOCAL: {
-			pir_local_t *local = &proc->locals[inst->d_local];
-			line_len += eprintf("local(%u)", inst->d_local);
-			_padding_to_size(line_len);
-			eprintf("; def %s%s: %s\n", local->is_mut ? "mut " : "", sv_from(local->name), type_dbg_str(local->type));
-			break;
-		}
-		case PIR_SYM:
-			if (inst->d_sym.sym == (rsym_t)-1) {
-				eprintf("sym_unresolved(%s.%s)\n", fs_module_symbol_sv(inst->d_sym.d_unresolved.module, -1), sv_from(inst->d_sym.d_unresolved.lit));
-			} else {
-				assert(0 && "TODO: implementing repr of resolved symbols");
-				// eprintf("sym(%s)\n", fs_module_symbol_sv(inst->d_sym.d_unresolved.module, inst->d_sym.d_unresolved.lit));
-			}
-			break; */
 		case PIR_LLOAD: {
 			line_len += eprintf("load ");
 			if (inst->d_load.is_sym) {
@@ -199,7 +177,7 @@ static void _dump_inst(pir_proc_t *proc, pir_inst_t *inst) {
 			} else {
 				line_len += eprintf("%s", _local_str(proc, inst->d_load.local));
 				_padding_to_size(line_len);
-				eprintf("; def %s%s: %s\n", proc->locals[inst->d_load.local].is_mut ? "mut " : "", sv_from(proc->locals[inst->d_load.local].name), type_dbg_str(proc->locals[inst->d_load.local].type));
+				eprintf("; def %s%s: %s\n", proc->locals[inst->d_load.local].is_mut ? "mut " : "let ", sv_from(proc->locals[inst->d_load.local].name), type_dbg_str(proc->locals[inst->d_load.local].type));
 			}
 			break;
 		}
@@ -208,7 +186,7 @@ static void _dump_inst(pir_proc_t *proc, pir_inst_t *inst) {
 			line_len += eprintf("store %s, %s", sstr, _inst_str(proc, inst->d_store.src));
 			if (!inst->d_store.is_sym) {
 				_padding_to_size(line_len);
-				eprintf("; def %s%s: %s\n", proc->locals[inst->d_store.local].is_mut ? "mut " : "", sv_from(proc->locals[inst->d_store.local].name), type_dbg_str(proc->locals[inst->d_store.local].type));
+				eprintf("; def %s%s: %s\n", proc->locals[inst->d_store.local].is_mut ? "mut " : "let ", sv_from(proc->locals[inst->d_store.local].name), type_dbg_str(proc->locals[inst->d_store.local].type));
 			} else {
 				eprintf("\n");
 			}

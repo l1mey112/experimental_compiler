@@ -471,11 +471,55 @@ void parser_break_continue(pir_rblock_t bb) {
 	}
 }
 
+// let v: T = expr
+// mut v: T = expr
+void parser_var_decl(pir_rblock_t bb) {
+	bool is_mut = false;
+	bool has_init = false;
+	if (parser_ctx.tok.type == TOK_MUT) {
+		is_mut = true;
+	}
+	parser_next();
+
+	istr_t name = parser_ctx.tok.lit;
+	loc_t name_loc = parser_ctx.tok.loc;
+
+	parser_expect(TOK_IDENT);
+	parser_expect(TOK_COLON);
+	// let a: T
+	//        ^
+
+	loc_t type_loc = parser_ctx.tok.loc;
+	type_t type = parser_parse_type();
+
+	if (parser_ctx.tok.type == TOK_ASSIGN) {
+		has_init = true;
+		parser_next();
+		parser_expr(bb, 0);
+	} else if (!is_mut) {
+		err_with_pos(name_loc, "immutable variables must have an initial value");
+	}
+
+	pir_rlocal_t local = parser_new_local((pir_local_t){
+		.name = name,
+		.name_loc = name_loc,
+		.type = type,
+		.type_loc = type_loc,
+		.is_mut = is_mut,
+	});
+
+	if (has_init) {
+		parser_value_t val = vpop_bottom();
+		pir_rinst_t ival = vemit(bb, val);
+		vstore_local(bb, local, ival, name_loc); // TODO: the loc_t should span the whole expression...
+	}
+}
+
 pir_rblock_t parser_stmt(pir_rblock_t bb) {
 	// let v: T = expr
 	// mut v: T = expr
 	if (parser_ctx.tok.type == TOK_MUT || parser_ctx.tok.type == TOK_LET) {
-		assert_not_reached();
+		parser_var_decl(bb);
 		return bb;
 	}
 
@@ -485,6 +529,9 @@ pir_rblock_t parser_stmt(pir_rblock_t bb) {
 	// label: {}
 	if (parser_ctx.tok.type == TOK_IDENT && parser_ctx.peek.type == TOK_COLON) {
 		label_name = parser_ctx.tok.lit;
+		if (parser_search_label(label_name) != (u32)-1) {
+			err_with_pos(parser_ctx.tok.loc, "label `%s` shadows existing", sv_from(label_name));
+		}
 		parser_next();
 		parser_next();
 	}

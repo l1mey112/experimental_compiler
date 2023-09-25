@@ -124,7 +124,11 @@ pir_rlocal_t parser_new_local(pir_local_t local) {
 	// make sure var doesn't already exist
 	pir_rlocal_t rlocal = parser_locate_local(local.name);
 	if (rlocal != (pir_rlocal_t)-1) {
-		err_with_pos(local.name_loc, "redefinition of variable `%s` in same scope", sv_from(local.name));
+		if (parser_ctx.cproc.locals[rlocal].is_arg) {
+			err_with_pos(local.name_loc, "redefinition of argument `%s`", sv_from(local.name));
+		} else {
+			err_with_pos(local.name_loc, "redefinition of variable `%s` in same scope", sv_from(local.name));
+		}
 		// err_with_pos(parser_ctx.cproc.locals[rlocal].loc, "previous definition was here");
 	} else {
 		rlocal = arrlenu(parser_ctx.cproc.locals);
