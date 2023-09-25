@@ -29,6 +29,7 @@ typedef double f64;
 #define eputs(v) fputs(v, stderr); fputc('\n', stderr)
 
 #define MAYBE_UNUSED __attribute__((unused))
+#define NORETURN __attribute__ ((noreturn))
 #define ARRAYLEN(v) ((u32)(sizeof(v) / sizeof(*(v))))
 
 static inline bool sv_cmp(u8 *a, size_t alen, u8 *b, size_t blen) {
@@ -99,8 +100,6 @@ istr_t sv_move(const char *p);
 const char *sv_from(istr_t str);
 ptrdiff_t sv_index(const char *p);
 
-void parser_parse_file(fs_rfile_t file);
-
 // node in a directory tree, also a module
 // root fs_nodes don't have a name, except when is_main
 struct fs_node_t {
@@ -143,20 +142,22 @@ struct err_diag_t {
 extern err_diag_t err_diag;
 
 void err_with_pos(loc_t loc, const char *fmt, ...)
-	__attribute__((format(printf, 2, 3))) __attribute__ ((__noreturn__));
+	__attribute__((format(printf, 2, 3))) NORETURN;
 
 void err_without_pos(const char *fmt, ...)
-	__attribute__((format(printf, 1, 2))) __attribute__ ((__noreturn__));
+	__attribute__((format(printf, 1, 2))) NORETURN;
 
 #define TOK_X_KEYWORDS_LIST \
 	X(TOK_FN, "fn") \
 	X(TOK_ASM, "asm") \
 	X(TOK_AS, "as") \
 	X(TOK_RETURN, "return") \
+	X(TOK_LET, "let") \
 	X(TOK_MUT, "mut") \
 	X(TOK_IF, "if") \
 	X(TOK_ELSE, "else") \
 	X(TOK_FOR, "for") \
+	X(TOK_WHILE, "while") \
 	X(TOK_BREAK, "break") \
 	X(TOK_CONTINUE, "continue") \
 	X(TOK_IMPORT, "import") \
@@ -366,7 +367,6 @@ struct pir_proc_t {
 	type_t type;
 	u16 args;
 	u16 rets;
-	pir_rblock_t entry;
 	pir_local_t *locals;
 	pir_block_t *blocks;
 	pir_inst_t *insts;
@@ -516,3 +516,104 @@ void table_dump(bool list_ir);
 void dump_proc(pir_proc_t *proc);
 
 void check_all(void);
+
+typedef struct parser_ctx_t parser_ctx_t;
+typedef struct parser_value_t parser_value_t;
+typedef enum parser_value_type_t parser_value_type_t;
+typedef enum parser_scope_kind_t parser_scope_kind_t;
+typedef struct parser_import_t parser_import_t;
+typedef struct parser_scope_t parser_scope_t;
+
+enum parser_value_type_t {
+	VAL_INST,
+	VAL_SYM,
+	VAL_LOCAL,
+	VAL_INTEGER_LITERAL,
+	// VAL_FLOAT_LITERAL,
+};
+
+struct parser_value_t {
+	parser_value_type_t kind;
+	loc_t loc;
+	type_t type; // -1 for none, TYPE_UNKNOWN is something else
+
+	union {
+		sym_resolve_t d_sym;
+		pir_rlocal_t d_local;
+		pir_rinst_t d_inst;
+		struct {
+			istr_t lit;
+			bool negate;
+		} d_literal;
+	};
+};
+
+enum parser_scope_kind_t {
+	SCOPE_FUNCTION,
+	SCOPE_BLOCK,
+	SCOPE_SWITCH_BLOCK,
+};
+
+struct parser_scope_t {
+	istr_t label; // -1 for none
+	parser_scope_kind_t kind;
+	pir_rlocal_t var_start;
+	pir_rlocal_t var_end;
+	pir_rblock_t bb;   // continue here
+	pir_rblock_t pred; // break here
+	union {
+		struct {
+			pir_rblock_t bb_end;
+		} d_if_block;
+	};
+};
+
+struct parser_import_t {
+	fs_rnode_t module;
+	istr_t name; // name of the module, in `import ... as name` as well
+};
+
+struct parser_ctx_t {
+	u8 *pstart;
+	u8 *pc;
+	u8 *pend;
+	u8 *plast_nl;
+	u32 line_nr;
+	token_t tok;
+	token_t peek;
+	parser_value_t es[128]; // expr stack
+	u32 es_len;
+	parser_scope_t ss[128]; // scope stack
+	u32 ss_len;
+	parser_import_t is[64]; // import stack
+	u32 is_len;
+	pir_proc_t cproc;
+	fs_rfile_t file;
+	fs_rnode_t module;
+	bool has_done_imports;
+};
+
+extern parser_ctx_t parser_ctx;
+void parser_parse_file(fs_rfile_t file);
+token_t parser_lex_next(void);
+void parser_expect(tok_t expected);
+void parser_check(tok_t expected);
+void NORETURN parser_unexpected(const char *err);
+void parser_next(void);
+
+pir_rinst_t parser_inew(pir_rblock_t bb, pir_inst_t inst);
+pir_rinst_t vstore_local(pir_rblock_t bb, pir_rlocal_t dest, pir_rinst_t src, loc_t loc);
+pir_rinst_t vstore_sym(pir_rblock_t bb, sym_resolve_t dest, pir_rinst_t src, loc_t loc);
+pir_rinst_t vstore(pir_rblock_t bb, parser_value_t dest, pir_rinst_t src, loc_t loc);
+parser_value_t vpop();
+parser_value_t vpop_bottom();
+pir_rinst_t vemit(pir_rblock_t bb, parser_value_t value);
+void vpush_ilit(istr_t lit, loc_t loc, bool negate);
+pir_rlocal_t parser_locate_local(istr_t ident);
+pir_rlocal_t parser_new_local(pir_local_t local);
+void vpush_id(istr_t ident, fs_rnode_t module_ref, loc_t loc);
+void vpush_inst(pir_rinst_t inst, loc_t loc);
+void vpush_inst_back(pir_rinst_t inst);
+void vinfix(pir_rblock_t bb, tok_t tok, loc_t loc);
+void vprefix(pir_rblock_t bb, tok_t tok, loc_t loc);
+void vcast(type_t type, loc_t loc);

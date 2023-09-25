@@ -1,291 +1,10 @@
 #include "all.h"
 
-#include <ctype.h>
 #include <assert.h>
-#include <stdio.h>
 
 #include "stb_ds.h"
 
-typedef struct parser_ctx_t parser_ctx_t;
-typedef struct parser_value_t parser_value_t;
-typedef struct parser_scope_span_t parser_scope_span_t;
-typedef enum parser_value_type_t parser_value_type_t;
-typedef enum parser_value_inst_flags_t parser_value_inst_flags_t;
-typedef struct parser_import_t parser_import_t;
-
-enum parser_value_type_t {
-	VAL_INST,
-	VAL_SYM,
-	VAL_LOCAL,
-	VAL_INTEGER_LITERAL,
-	// VAL_FLOAT_LITERAL,
-};
-
-// TODO: instructions should never be deleted in the parser...
-//       should be `SAFE_DISCARD` instead to discard a value if needed.
-enum parser_value_inst_flags_t {
-	// a = 230     <-- safe to remove duplicate load
-	// see: vemit_garbage()
-	VAL_INST_FLAGS_RESULT_SAFE_DELETE = 1 << 0,
-	// if (a = 20) <-- error: assignment in condition
-	// VAL_INST_FLAGS_RESULT_FROM_ASSIGN = 1 << 1,
-	// a || b && c <-- error: abiguous precedence
-	// VAL_INST_FLAGS_RESULT_NOT_FROM_BRACES = 1 << 2,
-};
-
-struct parser_value_t {
-	parser_value_type_t kind;
-	loc_t loc;
-	type_t type; // -1 for none, TYPE_UNKNOWN is something else
-
-	union {
-		sym_resolve_t d_sym;
-		pir_rlocal_t d_local;
-		struct {
-			istr_t lit;
-			bool negate;
-		} d_literal;
-		struct {
-			pir_rinst_t inst;
-			parser_value_inst_flags_t flags;
-		} d_inst;
-	};
-};
-
-struct parser_scope_span_t {
-	pir_rlocal_t start;
-	pir_rlocal_t end;
-};
-
-struct parser_import_t {
-	fs_rnode_t module;
-	istr_t name; // name of the module, in `import ... as name` as well
-};
-
-enum parser_scope_kind_t {
-	SCOPE_IF_BLOCK,
-	
-};
-
-struct parser_scope_t {
-	istr_t label; // -1 for none
-
-};
-
-struct parser_ctx_t {
-	u8 *pstart;
-	u8 *pc;
-	u8 *pend;
-	u8 *plast_nl;
-	u32 line_nr;
-	token_t tok;
-	token_t peek;
-	parser_value_t es[128]; // expt stack
-	u32 es_len;
-	parser_scope_span_t ss[128]; // scope stack
-	u32 ss_len;
-	parser_import_t is[64]; // import stack
-	u32 is_len;
-	pir_rblock_t last_block;
-	pir_proc_t cproc;
-	fs_rfile_t file;
-	fs_rnode_t module;
-	bool has_done_imports;
-};
-
-// allocates using alloc_* functions
-const char *tok_dbg_str(token_t tok) {
-	// handle identifiers
-
-	u8 *p;
-
-	bool requires_quotes = true;
-	const char *str = NULL;
-	u32 len;
-
-	// passing { .lit = -1, .type = TOK_IDENT } will return "identifier"
-	// so you can do something like: "unexpected `x`, expected identifier"
-	//                             : "unexpected `x`, expected `+=`"
-
-	if (TOK_HAS_LIT(tok.type) && tok.lit == (istr_t)-1) {
-		requires_quotes = false;
-	}
-	
-	if (TOK_HAS_LIT(tok.type) && tok.lit != (istr_t)-1) {
-		str = sv_from(tok.lit);
-		len = strlen(str);
-	}
-    #define X(val, lit) \
-		else if (val == tok.type) str = lit, len = strlen(lit);
-    TOK_X_LIST
-    #undef X
-
-	if (requires_quotes) {
-		p = alloc_scratch(len + 2 + 1);
-		sprintf((char *)p, "`%s`", str);
-	} else {
-		p = alloc_scratch(len + 1);
-		strcpy((char *)p, str);
-	}
-
-	return (const char *)p;
-}
-
-const char *tok_literal_representation(tok_t tok) {
-	switch (tok) {
-		#define X(val, lit) \
-			case val: return lit;
-		TOK_X_LIST
-		#undef X
-	}
-	assert_not_reached();
-}
-
-static parser_ctx_t parser_ctx;
-
-/* static bool is_lvalue(pir_rinst_t inst) {
-	return parser_ctx.cproc.insts[inst].is_lvalue;
-} */
-
-static bool is_id_begin(u8 ch) {
-    return isalpha(ch) || ch == '_';
-}
-
-static bool is_id(u8 ch) {
-    return isalpha(ch) || ch == '_' || isdigit(ch);
-}
-
-static token_t parser_lex_next(void) {
-	while (parser_ctx.pc < parser_ctx.pend) {
-		u8 ch = *parser_ctx.pc;
-
-		if (isspace(ch)) {
-			parser_ctx.pc++;
-			if (ch == '\n') {
-				parser_ctx.plast_nl = parser_ctx.pc;
-				parser_ctx.line_nr++;
-			}
-			continue;
-		}
-
-		if (is_id_begin(ch)) {
-			u8 *start = parser_ctx.pc;
-
-			token_t token = {
-				.type = TOK_INTEGER,
-				.loc.line_nr = parser_ctx.line_nr,
-				.loc.col = parser_ctx.pc - parser_ctx.plast_nl,
-				.loc.file = parser_ctx.file,
-				.loc.pos = start - parser_ctx.pstart,
-			};
-			
-			do {
-				parser_ctx.pc++;
-			} while (parser_ctx.pc < parser_ctx.pend && is_id(*parser_ctx.pc));
-
-			// get length and id pointer
-			u32 len = parser_ctx.pc - start;
-			token.loc.len = len;
-
-			// TODO: this should be optimised to a static hash table
-
-			if (0);
-			#define X(val, lit) \
-				else if (sv_cmp_literal(start, len, lit)) token.type = val;
-			TOK_X_KEYWORDS_LIST
-			#undef X
-			else {
-				token.type = TOK_IDENT;
-				token.lit = sv_intern(start, len);
-			}
-
-			return token;
-		} else if (isdigit(ch)) {
-			u8 *start = parser_ctx.pc;
-
-			token_t token = {
-				.type = TOK_INTEGER,
-				.loc.line_nr = parser_ctx.line_nr,
-				.loc.col = parser_ctx.pc - parser_ctx.plast_nl,
-				.loc.file = parser_ctx.file,
-				.loc.pos = start - parser_ctx.pstart,
-			};
-			
-			do {
-				parser_ctx.pc++;
-			} while (parser_ctx.pc < parser_ctx.pend && isdigit(*parser_ctx.pc));
-
-			// get length and id pointer
-			u32 len = parser_ctx.pc - start;
-
-			token.lit = sv_intern(start, len);
-			token.loc.len = len;
-
-			return token;
-		} else {
-			u8 *start = parser_ctx.pc;
-			size_t avail = parser_ctx.pend - parser_ctx.pc;
-
-			// the compiler optimiser would be able to optimise and
-			// spot locations of compile time known bounds to memcmp
-			// ... where it can
-			//
-			// this isn't perfect, the old switch case impl would be better
-			// the macro method reduces complexity on implementation
-			// i know well that the compiler will NOT optimise this efficiently
-
-			// TODO: ~~this should be optimised to a static hash table~~
-			//       maybe not, it's not that much faster
-
-			token_t token = {
-				.loc.line_nr = parser_ctx.line_nr,
-				.loc.col = parser_ctx.pc - parser_ctx.plast_nl,
-				.loc.file = parser_ctx.file,
-				.loc.pos = start - parser_ctx.pstart,
-			};
-
-			if (0);
-			#define X(val, lit) \
-				else if (strlen(lit) <= avail && memcmp(start, lit, strlen(lit)) == 0) { \
-					token.type = val; \
-					token.loc.len = strlen(lit); \
-					parser_ctx.pc += strlen(lit); \
-				}
-			TOK_X_OPERATOR_LIST
-			#undef X
-			else {
-				err_with_pos(token.loc, "unexpected character `%c`", ch);
-			}
-
-			return token;
-		}
-	}
-
-	return (token_t){.type = TOK_EOF};
-}
-
-static void parser_next(void) {
-	parser_ctx.tok = parser_ctx.peek;
-	parser_ctx.peek = parser_lex_next();
-}
-
-#define DEFAULT_DBG_TOK(expected) (token_t){.type = expected, .lit = (istr_t)-1}
-
-static void parser_expect(tok_t expected) {
-	if (parser_ctx.tok.type == expected) {
-		parser_next();
-	} else if (parser_ctx.tok.type == TOK_EOF) {
-		err_with_pos(parser_ctx.tok.loc, "unexpected EOF, expected %s", tok_dbg_str(DEFAULT_DBG_TOK(expected)));
-	} else {
-		err_with_pos(parser_ctx.tok.loc, "unexpected %s, expected %s", tok_dbg_str(parser_ctx.tok), tok_dbg_str(DEFAULT_DBG_TOK(expected)));
-	}
-}
-
-static void __attribute__ ((__noreturn__)) parser_unexpected(const char *err) {
-	err_with_pos(parser_ctx.tok.loc, "unexpected %s, %s", tok_dbg_str(parser_ctx.tok), err);
-}
-
-#undef DEFAULT_DBG_TOK
+parser_ctx_t parser_ctx;
 
 // will be filled from main()
 istr_t typeinfo_concrete_istr[_TYPE_CONCRETE_MAX];
@@ -323,14 +42,64 @@ type_t parser_parse_type() {
 	return type;
 }
 
-pir_rblock_t parser_enter_new_bb() {
-	pir_rblock_t id = pir_new_block(&parser_ctx.cproc);
-	parser_ctx.last_block = id;
-	return id;
+// -1 for not found
+int parser_import_ident(istr_t name) {
+	for (u32 i = 0; i < parser_ctx.is_len; i++) {
+		if (parser_ctx.is[i].name == name) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+void parser_parse_ident(void) {
+	loc_t loc = parser_ctx.tok.loc;
+
+	// is imported ident
+	int id;
+	if ((id = parser_import_ident(parser_ctx.tok.lit)) != -1) {
+		parser_next();
+		parser_expect(TOK_DOT);
+		istr_t ref = parser_ctx.tok.lit;
+		parser_expect(TOK_IDENT); // TODO: istr_t span
+		vpush_id(ref, parser_ctx.is[id].module, loc);
+	} else {
+		vpush_id(parser_ctx.tok.lit, -1, loc);
+		parser_next();
+	}
+}
+
+void parser_new_scope_from(parser_scope_t ps) {
+	if (parser_ctx.ss_len >= ARRAYLEN(parser_ctx.ss)) {
+		err_without_pos("scope stack is full, stop indenting above 128 levels");
+	}
+	parser_ctx.ss[parser_ctx.ss_len++] = ps;
+}
+
+// `bb` and `pred` are only needed on "continue" and "break" scopes
+void parser_new_scope(istr_t label, pir_rblock_t bb, pir_rblock_t pred, parser_scope_kind_t kind) {
+	parser_new_scope_from((parser_scope_t){
+		.label = label,
+		.kind = kind,
+		.var_start = arrlenu(parser_ctx.cproc.locals),
+		.var_end = arrlenu(parser_ctx.cproc.locals),
+		.bb = bb,
+		.pred = pred,
+	});
+}
+
+parser_scope_t parser_pop_scope_into() {
+	assert(parser_ctx.ss_len > 0);
+	return parser_ctx.ss[--parser_ctx.ss_len];
+}
+
+void parser_pop_scope() {
+	assert(parser_ctx.ss_len > 0);
+	parser_ctx.ss_len--;
 }
 
 enum {
-	PREC_UNKOWN,  // default
+	PREC_UNKNOWN, // default
 	PREC_ASSIGN,  // = += -= *= /= %=
 	PREC_CMP,     // && || (TODO: needs parens)
 	PREC_EQ,      // == != < > <= >=
@@ -389,378 +158,18 @@ static u8 parser_tok_precedence(tok_t type) {
 		case TOK_ASSIGN_MOD:
 			return PREC_ASSIGN;
 		default:
-			return 0;
+			return PREC_UNKNOWN;
 	}
 }
 
-pir_rlocal_t parser_locate_local(istr_t ident) {
-	for (pir_rlocal_t i = parser_ctx.ss_len; i > 0;) {
-		i--;
-		parser_scope_span_t span = parser_ctx.ss[i];
-		for (pir_rlocal_t j = span.end; j > span.start;) {
-			j--;
-			pir_local_t local = parser_ctx.cproc.locals[j];
-			if (local.name == ident) {
-				return j;
-			}
-		}
-	}
-	return -1;
-};
-
-pir_rlocal_t parser_new_local(pir_local_t local) {
-	// make sure var doesn't already exist
-	pir_rlocal_t rlocal = parser_locate_local(local.name);
-	if (rlocal != (pir_rlocal_t)-1) {
-		err_with_pos(local.name_loc, "redefinition of variable `%s` in same scope", sv_from(local.name));
-		// err_with_pos(parser_ctx.cproc.locals[rlocal].loc, "previous definition was here");
-	} else {
-		rlocal = arrlenu(parser_ctx.cproc.locals);
-	}
-
-	parser_ctx.ss[parser_ctx.ss_len - 1].end++;
-	arrpush(parser_ctx.cproc.locals, local);
-
-	// TODO: should be fine to remove...
-	assert(parser_ctx.ss[parser_ctx.ss_len - 1].end == arrlenu(parser_ctx.cproc.locals));
-
-	return rlocal;
-}
-
-void parser_push_scope() {
-	if (parser_ctx.ss_len >= ARRAYLEN(parser_ctx.ss)) {
-		err_without_pos("scope stack is full, stop indenting above 128 levels");
-	}
-	parser_ctx.ss[parser_ctx.ss_len++] = (parser_scope_span_t){
-		.start = arrlenu(parser_ctx.cproc.locals),
-		.end = arrlenu(parser_ctx.cproc.locals),
-	};
-}
-
-void parser_pop_scope() {
-	assert(parser_ctx.ss_len > 0);
-	parser_ctx.ss_len--;
-}
-
-parser_value_t vpop() {
-	assert(parser_ctx.es_len > 0);
-	return parser_ctx.es[--parser_ctx.es_len];
-}
-
-parser_value_t vpop_bottom() {
-	assert(parser_ctx.es_len == 1);
-	return parser_ctx.es[--parser_ctx.es_len];
-}
-
-pir_rinst_t parser_inew(pir_inst_t inst) {
-	return pir_insert(&parser_ctx.cproc, parser_ctx.last_block, inst);
-}
-
-pir_rinst_t parser_inew_b(pir_rblock_t block, pir_inst_t inst) {
-	return pir_insert(&parser_ctx.cproc, block, inst);	
-}
-
-pir_rinst_t vstore_local(pir_rlocal_t dest, pir_rinst_t src, loc_t loc) {
-	return parser_inew((pir_inst_t){
-		.kind = PIR_LSTORE,
-		.loc = loc,
-		.type = TYPE_VOID,
-		.d_store.local = dest,
-		.d_store.src = src,
-		.d_store.is_sym = false,
-	});
-}
-
-pir_rinst_t vstore_sym(sym_resolve_t dest, pir_rinst_t src, loc_t loc) {
-	return parser_inew((pir_inst_t){
-		.kind = PIR_LSTORE,
-		.loc = loc,
-		.type = TYPE_VOID,
-		.d_store.sym = dest,
-		.d_store.src = src,
-		.d_store.is_sym = true,
-	});
-}
-
-pir_rinst_t vstore(parser_value_t dest, pir_rinst_t src, loc_t loc) {
-	switch (dest.kind) {
-		case VAL_SYM:
-			return vstore_sym(dest.d_sym, src, loc);
-		case VAL_LOCAL:
-			return vstore_local(dest.d_local, src, loc);
-		default:
-			err_with_pos(dest.loc, "cannot assign to this");
-	}
-}
-
-pir_rinst_t vemit(parser_value_t value) {
-	// if the `value` is already an instruction, just return it
-	// we have to emit everything else (constants, etc.)
-
-	if (value.kind == VAL_INST) {
-		return value.d_inst.inst;
-	}
-
-	switch (value.kind) {
-		case VAL_SYM: {
-			return parser_inew((pir_inst_t){
-				.kind = PIR_LLOAD,
-				.loc = value.loc,
-				.type = value.type,
-				.d_load.is_sym = true,
-				.d_load.sym = value.d_sym,
-			});
-		}
-		case VAL_LOCAL: {
-			return parser_inew((pir_inst_t){
-				.kind = PIR_LLOAD,
-				.loc = value.loc,
-				.type = value.type,
-				.d_load.is_sym = false,
-				.d_load.local = value.d_local,
-			});
-		}
-		case VAL_INTEGER_LITERAL:
-			return parser_inew((pir_inst_t){
-				.kind = PIR_INTEGER_LITERAL,
-				.loc = value.loc,
-				.type = value.type,
-				.d_literal.lit = value.d_literal.lit,
-				.d_literal.negate = value.d_literal.negate,
-			});
-		default:
-			assert_not_reached();
-	}
-}
-
-// UB if the current block does not store the instruction in `inst`
-void vdelete_inst(pir_rinst_t inst) {
-	// remove from top
-	if (inst + 1 == arrlenu(parser_ctx.cproc.insts)) {
-		arrpop(parser_ctx.cproc.insts);
-		parser_ctx.cproc.blocks[parser_ctx.last_block].len--;
-		return;
-	}
-	// TODO: should this even be reached?
-	//       in most cases we should be able to just pop the top
-	//       in other cases, it isn't really the parsers job...
-	// assert(0 && "TODO: implement NOPs");
-	eprintf("nop reached: %u\n", inst);
-	parser_ctx.cproc.insts[inst].type = PIR_NOP;
-}
-
-void vemit_garbage(parser_value_t value) {
-	// remember the use of `VAL_INST_FLAGS_RESULT_SAFE_DELETE` should be done to
-	// remove instructions that are essentially, junk.
-	// take a v++ expression:
-	// 
-	//     %0 = sym
-	//     %1 = %0 + 1
-	//          store(%0, %1)
-	//     << %0
-	//
-	// it's okay to pop off `%0` from the stack and ignore it.
-	// extra loads weren't generated for no reason.
-
-	assert(!(value.d_inst.flags & VAL_INST_FLAGS_RESULT_SAFE_DELETE) && "DEPRCATED: ensure you have a very very good reason to use this");
-
-	if (value.kind == VAL_INST && value.d_inst.flags & VAL_INST_FLAGS_RESULT_SAFE_DELETE) {
-		// we won't emit, but the load (assign expressions) has already taken place...
-		vdelete_inst(value.d_inst.inst);
-		return;
-	}
-
-	(void)vemit(value);
-}
-
-void vpush_ilit(istr_t lit, loc_t loc, bool negate) {
-	assert(parser_ctx.es_len < ARRAYLEN(parser_ctx.es));
-
-	// TODO: regarding `TYPE_UNRESOLVED` here:
-	//       should we introduce a new type `TYPE_INTERGER_LITERAL` ?
-	//       infer or not? that's the question
-
-	parser_ctx.es[parser_ctx.es_len++] = (parser_value_t){
-		.kind = VAL_INTEGER_LITERAL,
-		.d_literal.lit = lit,
-		.d_literal.negate = negate,
-		.loc = loc,
-		.type = TYPE_UNRESOLVED,
-	};
-}
-
-void vpush_id(istr_t ident, fs_rnode_t module_ref, loc_t loc) {
-	assert(parser_ctx.es_len < ARRAYLEN(parser_ctx.es));
-
-	pir_rlocal_t rlocal = parser_locate_local(ident);
-	bool resolved = rlocal != (pir_rlocal_t)-1;
-
-	parser_value_t val;
-	type_t type = rlocal == (pir_rlocal_t)-1 ? TYPE_UNRESOLVED : parser_ctx.cproc.locals[rlocal].type;
-
-	module_ref = module_ref == (fs_rnode_t)-1 ? parser_ctx.module : module_ref;
-
-	if (resolved) {
-		val = (parser_value_t){
-			.kind = VAL_LOCAL,
-			.loc = loc,
-			.type = type,
-			.d_local = rlocal,
-		};
-	} else {
-		val = (parser_value_t){
-			.kind = VAL_SYM,
-			.loc = loc,
-			.type = type,
-			.d_sym.sym = SYM_UNRESOLVED,
-			.d_sym.d_unresolved.module = module_ref,
-			.d_sym.d_unresolved.lit = ident,
-		};
-	}
-
-	parser_ctx.es[parser_ctx.es_len++] = val;
-}
-
-void vpush_inst_flags(pir_rinst_t inst, loc_t loc, parser_value_inst_flags_t flags) {
-	assert(parser_ctx.es_len < ARRAYLEN(parser_ctx.es));
-	parser_ctx.es[parser_ctx.es_len++] = (parser_value_t){
-		.kind = VAL_INST,
-		.loc = loc,
-		.type = parser_ctx.cproc.insts[inst].type,
-		.d_inst.inst = inst,
-		.d_inst.flags = flags,
-	};
-}
-
-// vpop() then vpush()
-void vpush_inst_back(pir_rinst_t inst) {
-	vpush_inst_flags(inst, parser_ctx.cproc.insts[inst].loc, 0);
-}
-
-// vpop() then vpush()
-void vpush_inst_back_flags(pir_rinst_t inst, parser_value_inst_flags_t flags) {
-	vpush_inst_flags(inst, parser_ctx.cproc.insts[inst].loc, flags);
-}
-
-void vpush_inst(pir_rinst_t inst, loc_t loc) {
-	vpush_inst_flags(inst, loc, 0);
-}
-
-void vinfix(tok_t tok, loc_t loc) {
-	assert(parser_ctx.es_len >= 2);
-
-	parser_value_t rhs = vpop();
-	parser_value_t lhs = vpop();
-
-	// TODO: `ir_is_lvalue()`
-	//       we won't always have access to the concrete representation
-	// TODO: should we store lvalue paths as a VAL_* ? it would simplify things
-	/* if (tok == TOK_ASSIGN && lhs.kind != VAL_SYM) {
-		err_with_pos(loc, "lhs of assignment must be an lvalue");
-		return;
-	} */
-
-	// TODO: if boolean expression like `||` or `&&`,
-	//       type must be TYPE_BOOL.
-
-	// TODO: resolve `TYPE_UNRESOLVED` if possible
-	//       checker should expose function that implements this
-	// 	 e.g.:
-	//       i64 + u32 -> i64
-	//       i64 + i32 -> i64
-
-	pir_rinst_t inst;
-
-	pir_rinst_t irhs = vemit(rhs);
-
-	if (tok != TOK_ASSIGN) {
-		pir_rinst_t ilhs = vemit(lhs);
-		inst = parser_inew((pir_inst_t){
-			.loc = loc,
-			.type = TYPE_UNRESOLVED,
-			.kind = PIR_INFIX,
-			.d_infix.op = tok,
-			.d_infix.lhs = ilhs,
-			.d_infix.rhs = irhs,
-		});
-
-		vpush_inst(inst, loc);
-	} else {
-		// assign expressions do actually return the value
-		// but must be reloaded for use in further expressions
-		vstore(lhs, irhs, loc);
-		vpush_inst(irhs, loc);
-	}
-}
-
-void vprefix(tok_t tok, loc_t loc) {
-	assert(parser_ctx.es_len >= 1);
-
-	parser_value_t val = vpop();
-
-	pir_rinst_t ival = vemit(val);
-
-	// TODO: resolve `TYPE_UNRESOLVED` if possible
-	//       ....
-
-	pir_rinst_t inst = parser_inew((pir_inst_t){
-		.loc = loc,
-		.type = TYPE_UNRESOLVED,
-		.kind = PIR_PREFIX,
-		.d_prefix.op = tok,
-		.d_prefix.val = ival,
-	});
-
-	vpush_inst(inst, loc);
-}
-
-void vcast(type_t type, loc_t loc) {
-	assert(parser_ctx.es_len >= 1);
-
-	parser_value_t val = vpop();
-
-	(void)type;
-	(void)loc;
-	(void)val;
-
-	assert(0 && "TODO: emit");
-}
-
-// -1 for not found
-int parser_import_ident(istr_t name) {
-	for (u32 i = 0; i < parser_ctx.is_len; i++) {
-		if (parser_ctx.is[i].name == name) {
-			return i;
-		}
-	}
-	return -1;
-}
-
-void parser_parse_ident(void) {
-	loc_t loc = parser_ctx.tok.loc;
-
-	// is imported ident
-	int id;
-	if ((id = parser_import_ident(parser_ctx.tok.lit)) != -1) {
-		parser_next();
-		parser_expect(TOK_DOT);
-		istr_t ref = parser_ctx.tok.lit;
-		parser_expect(TOK_IDENT); // TODO: istr_t span
-		vpush_id(ref, parser_ctx.is[id].module, loc);
-	} else {
-		vpush_id(parser_ctx.tok.lit, -1, loc);
-		parser_next();
-	}
-}
-
-void parser_expr(u8 prec) {
+void parser_expr(pir_rblock_t bb, u8 prec) {
 	switch (parser_ctx.tok.type) {
 		case TOK_IDENT:
 			parser_parse_ident();
 			break;
 		case TOK_OPAR:
 			parser_next();
-			parser_expr(0);
+			parser_expr(bb, 0);
 			parser_expect(TOK_CPAR);
 			break;
 		case TOK_INTEGER:
@@ -776,8 +185,8 @@ void parser_expr(u8 prec) {
 					vpush_ilit(parser_ctx.tok.lit, parser_ctx.tok.loc, true);
 					parser_next();
 				} else {
-					parser_expr(PREC_PREFIX);
-					vprefix(parser_ctx.tok.type, parser_ctx.tok.loc);
+					parser_expr(bb, PREC_PREFIX);
+					vprefix(bb, parser_ctx.tok.type, parser_ctx.tok.loc);
 				}
 			} else {
 				parser_unexpected("expected expression");
@@ -803,24 +212,24 @@ void parser_expr(u8 prec) {
 				u32 cc = 0;
 
 				parser_value_t target_v = vpop();
-				pir_rinst_t target = vemit(target_v);
+				pir_rinst_t target = vemit(bb, target_v);
 
 				parser_next();
 				while (parser_ctx.tok.type != TOK_CPAR) {
-					parser_expr(0);
+					parser_expr(bb, 0);
 					if (parser_ctx.tok.type == TOK_COMMA) {
 						parser_next();
 					} else if (parser_ctx.tok.type != TOK_CPAR) {
 						parser_unexpected("expected `,` or `)`");
 					}
-					cl[cc++] = vemit(vpop());
+					cl[cc++] = vemit(bb, vpop());
 				}
 				parser_next();
 
 				// commit
 				(void)alloc_scratch(cc * sizeof(pir_rinst_t));
 
-				pir_rinst_t inst = parser_inew((pir_inst_t){
+				pir_rinst_t inst = parser_inew(bb, (pir_inst_t){
 					.kind = PIR_CALL,
 					.loc = target_v.loc,
 					.type = TYPE_UNKNOWN, // TODO: resolve...
@@ -835,16 +244,16 @@ void parser_expr(u8 prec) {
 			case TOK_DEC:
 				parser_next();
 				parser_value_t sym = vpop();
-				pir_rinst_t oval = vemit(sym);
+				pir_rinst_t oval = vemit(bb, sym);
 
 				// TODO: unify these locations... they're all over the place!
 
 				vpush_inst_back(oval);
 				vpush_ilit(sv_intern((u8*)"1", 1), token.loc, false);
-				vinfix(token.type == TOK_INC ? TOK_ADD : TOK_SUB, token.loc);
-				pir_rinst_t result = vemit(vpop());
+				vinfix(bb, token.type == TOK_INC ? TOK_ADD : TOK_SUB, token.loc);
+				pir_rinst_t result = vemit(bb, vpop());
 				// vsym_set(result, sym, token.loc);
-				vstore(sym, result, token.loc);
+				vstore(bb, sym, result, token.loc);
 
 				// %0 = sym
 				// %1 = %0 + 1
@@ -856,8 +265,8 @@ void parser_expr(u8 prec) {
 				if (TOK_IS_INFIX(token.type)) {
 					u8 prec = parser_tok_precedence(token.type);
 					parser_next();
-					parser_expr(prec);
-					vinfix(token.type, token.loc);
+					parser_expr(bb, prec);
+					vinfix(bb, token.type, token.loc);
 				} else {
 					goto exit;
 				}
@@ -868,245 +277,261 @@ exit:
 	return;
 }
 
-void parser_var_decl() {
-	bool is_mut = false;
-	bool has_init = false;
-
-	if (parser_ctx.tok.type == TOK_MUT) {
-		is_mut = true;
-		parser_next();
+u32 parser_search_label(istr_t label_name) {
+	// search backwards, even though labels can't be shadowed
+	for (u32 i = parser_ctx.ss_len; i--;) {
+		if (parser_ctx.ss[i].label == label_name) {
+			return i;
+		}
 	}
-	
-	istr_t name = parser_ctx.tok.lit;
-	loc_t name_loc = parser_ctx.tok.loc;
-
-	parser_next();
-	parser_next();
-	// a: T
-	//    ^
-
-	loc_t type_loc = parser_ctx.tok.loc;
-	type_t type = parser_parse_type();
-
-	// -- i don't want "immutable variables ..." to show up before the "redefinition of ..." error
-	// -- it will search for the local a second time in `parser_new_local`, that is okay
-	// -- pir_rlocal_t rlocal = parser_locate_local(name);
-
-	if (parser_ctx.tok.type == TOK_ASSIGN) {
-		has_init = true;
-		parser_next();
-		parser_expr(0);
-	} else if (!is_mut) {
-		err_with_pos(name_loc, "immutable variables must have an initial value");
-	}
-
-	pir_rlocal_t local = parser_new_local((pir_local_t){
-		.name = name,
-		.name_loc = name_loc,
-		.type = type,
-		.type_loc = type_loc,
-		.is_mut = is_mut,
-	});
-
-	if (has_init) {
-		parser_value_t val = vpop_bottom();
-		pir_rinst_t ival = vemit(val);
-		vstore_local(local, ival, name_loc); // TODO: the loc_t should span the whole expression...
-	}
+	return (u32)-1;
 }
 
-void parser_stmt();
+pir_rblock_t parser_stmt(pir_rblock_t bb);
 
-pir_rblock_t parser_parse_bb() {
-	parser_push_scope();
-
-	pir_rblock_t old_block = parser_ctx.last_block;
-	pir_rblock_t new_block = pir_new_block(&parser_ctx.cproc);
-	parser_ctx.last_block = new_block;
-	
-	// parser_ctx.cproc.entry = parser_new_block();
-	
+pir_rblock_t parser_block(pir_rblock_t entry) {
 	parser_expect(TOK_OBRACE);
 	while (parser_ctx.tok.type != TOK_CBRACE) {
-		parser_stmt();
+		entry = parser_stmt(entry);
 	}
 	parser_next();
+	return entry;
+}
 
+pir_rblock_t parser_if_stmt(istr_t label_name, pir_rblock_t entry) {
+	bool has_entered = false;
+	bool has_else = false;
+
+	pir_rblock_t pred = pir_new_block(&parser_ctx.cproc);
+
+	if (label_name != (istr_t)-1) {
+		pir_rblock_t next = pir_new_block(&parser_ctx.cproc);
+		parser_inew(entry, (pir_inst_t){
+			.kind = PIR_JMP,
+			.loc = parser_ctx.tok.loc,
+			.type = TYPE_NORETURN,
+			.d_jmp = next,
+		});
+		entry = next;
+	}
+
+	pir_rblock_t arm_entry = entry;
+	pir_rblock_t on_false;
+	while (!has_else) {
+		switch (parser_ctx.tok.type) {
+			case TOK_IF:
+				if (has_entered) {
+					// if (expr) {} if (expr) {}
+					goto done;
+				}
+				has_entered = true;
+				parser_next();
+				break;
+			case TOK_ELSE:
+				parser_next();
+				arm_entry = on_false;
+				if (parser_ctx.tok.type == TOK_IF) {
+					parser_next();
+					break;
+				}
+				has_else = true;
+				// else {}
+				//        ^>
+				break;
+			default:
+				goto done;
+		}
+
+		pir_rblock_t on_true;
+
+		if (!has_else) {
+			on_true = pir_new_block(&parser_ctx.cproc);
+			
+			// (expr) {}
+			// ^
+			parser_expect(TOK_OPAR);
+			parser_expr(arm_entry, 0);
+			parser_expect(TOK_CPAR);
+
+			pir_rinst_t cond = vemit(arm_entry, vpop_bottom()); 
+
+			on_false = pir_new_block(&parser_ctx.cproc);
+
+			parser_inew(arm_entry, (pir_inst_t){
+				.kind = PIR_IF,
+				.type = TYPE_NORETURN,
+				.d_if.cond = cond,
+				.d_if.on_true = on_true,
+				.d_if.on_false = on_false,
+			});
+		} else {
+			on_true = arm_entry;
+			// on_false = arm_entry;
+		}
+
+		parser_new_scope(label_name, entry, pred, SCOPE_BLOCK);
+		{
+			on_true = parser_block(on_true);
+		}
+		parser_pop_scope();
+
+		parser_inew(on_true, (pir_inst_t){
+			.kind = PIR_JMP,
+			.type = TYPE_NORETURN,
+			.d_jmp = pred,
+		});
+	}
+done:;
+
+	if (!has_else) {
+		parser_inew(on_false, (pir_inst_t){
+			.kind = PIR_JMP,
+			.type = TYPE_NORETURN,
+			.d_jmp = pred,
+		});
+	}
+
+	return pred;
+}
+
+pir_rblock_t parser_open_block(istr_t label_name, pir_rblock_t entry) {
+	// label avail, may be jumped to
+	// TODO: give basic blocks debug names? pass it the label_name
+
+	pir_rblock_t pred = (pir_rblock_t)-1;
+
+	// entry:
+	//         ...
+	// next:
+	//         continue :next
+	//         break :pred
+	// pred:
+	//
+	if (label_name != (istr_t)-1) {
+		pir_rblock_t next = pir_new_block(&parser_ctx.cproc);
+		parser_inew(entry, (pir_inst_t){
+			.kind = PIR_JMP,
+			.loc = parser_ctx.tok.loc,
+			.type = TYPE_NORETURN,
+			.d_jmp = next,
+		});
+		entry = next;
+		pred = pir_new_block(&parser_ctx.cproc);
+	}
+
+	parser_new_scope(label_name, entry, pred, SCOPE_BLOCK);
+	{
+		entry = parser_block(entry);
+	}
 	parser_pop_scope();
 
-	parser_ctx.last_block = old_block;
-	return new_block;
+	// link up last entry with the pred if needed
+	if (pred != (pir_rblock_t)-1) {
+		parser_inew(entry, (pir_inst_t){
+			.kind = PIR_JMP,
+			.loc = parser_ctx.tok.loc,
+			.type = TYPE_NORETURN,
+			.d_jmp = pred,
+		});
+		return pred;
+	} else {
+		return entry;
+	}
 }
 
-void parser_parse_syn_scope(bool new_scope) {
-	if (new_scope) {
-		parser_push_scope();
-	}
-	
-	parser_expect(TOK_OBRACE);
-	while (parser_ctx.tok.type != TOK_CBRACE) {
-		parser_stmt();
-	}
+void parser_break_continue(pir_rblock_t bb) {
+	bool is_break = parser_ctx.tok.type == TOK_BREAK;
+	loc_t key_loc = parser_ctx.tok.loc;
+
+	pir_rblock_t jmp_target;
+
 	parser_next();
+	if (parser_ctx.tok.type == TOK_COLON) {
+		parser_next();
+		loc_t loc = parser_ctx.tok.loc;
+		istr_t label = parser_ctx.tok.lit;
+		parser_expect(TOK_IDENT);
+		u32 scope;
+		if ((scope = parser_search_label(label)) == (u32)-1) {
+			err_with_pos(loc, "label `%s` not found", sv_from(label));
+		}
 
-	if (new_scope) {
-		parser_pop_scope();
+		jmp_target = is_break ? parser_ctx.ss[scope].pred : parser_ctx.ss[scope].bb;
+		
+		// emit
+		parser_inew(bb, (pir_inst_t){
+			.kind = PIR_JMP,
+			.loc = key_loc,
+			.type = TYPE_NORETURN,
+			.d_jmp = jmp_target,
+		});
+	} else {
+		// TODO: impl loop break continue
+		assert_not_reached();
 	}
 }
 
-// paren parameter
-pir_rinst_t parser_parse_pparam() {
-	parser_expect(TOK_OPAR);
-	parser_expr(0);
-	pir_rinst_t cond = vemit(vpop_bottom());
-	parser_expect(TOK_CPAR);
-	return cond;
-}
+pir_rblock_t parser_stmt(pir_rblock_t bb) {
+	// let v: T = expr
+	// mut v: T = expr
+	if (parser_ctx.tok.type == TOK_MUT || parser_ctx.tok.type == TOK_LET) {
+		assert_not_reached();
+		return bb;
+	}
 
-void parser_stmt() {
-	// var dec
-	if (parser_ctx.tok.type == TOK_MUT || (parser_ctx.tok.type == TOK_IDENT && parser_ctx.peek.type == TOK_COLON)) {
-		parser_var_decl();
-		return;
+	istr_t label_name = (istr_t)-1;
+	loc_t label_loc = parser_ctx.tok.loc;
+
+	// label: {}
+	if (parser_ctx.tok.type == TOK_IDENT && parser_ctx.peek.type == TOK_COLON) {
+		label_name = parser_ctx.tok.lit;
+		parser_next();
+		parser_next();
 	}
 
 	switch (parser_ctx.tok.type) {
-		case TOK_RETURN: {
-			loc_t loc = parser_ctx.tok.loc;
-
-			// return expr, expr, expr
-
-			pir_rinst_t *retl = (pir_rinst_t *)alloc_scratch(0);
-			u32 retc = 0;
-
-			parser_next();
-			do {
-				parser_expr(0);
-				retl[retc++] = vemit(vpop());
-			} while (parser_ctx.tok.type == TOK_COMMA);
-
-			// commit
-			(void)alloc_scratch(retc * sizeof(pir_rinst_t));
-
-			parser_inew((pir_inst_t){
-				.kind = PIR_RETURN,
-				.loc = loc,
-				.type = TYPE_NORETURN, // TODO: should reveal **OBVIOUS** unreachable code errors inside the parser? probably not...
-				.d_return.ilist = retl,
-				.d_return.ilen = retc,
-			});
-			break;
-		}			
+		case TOK_OBRACE: {
+			return parser_open_block(label_name, bb);
+		}
 		case TOK_IF: {
-			// if (expr) {} else if {} else {}
-
-			bool has_entered = false;
-
-			// parse into a (stack) list of blocks and thread them together
-			// this is the simplest, resulting in a nice order (for debug printing block by block)
-
-			pir_rblock_t ifstack[32];
-			pir_rinst_t condstack[32];
-			u32 ctxstack_len = 0;
-			
-			pir_rblock_t entry = parser_ctx.last_block;
-			pir_rblock_t else_case = -1;
-			while (1) {
-				switch (parser_ctx.tok.type) {
-					case TOK_IF:
-						if (has_entered) {
-							// if (expr) {} if (expr) {}
-							goto done;
-						}
-						has_entered = true;
-						parser_next();
-						break;
-					case TOK_ELSE:
-						parser_next();
-						if (parser_ctx.tok.type == TOK_IF) {
-							parser_next();
-							break;
-						}
-						else_case = parser_parse_bb();
-						// else {}
-						//        ^>
-					default:
-						goto done;
-				}
-
-				// (expr) {}
-				// ^
-				parser_expect(TOK_OPAR);
-				parser_expr(0);
-				parser_expect(TOK_CPAR);
-
-				pir_rinst_t cond = vemit(vpop_bottom());
-
-				// (expr) {
-				// 	      ^
-				pir_rblock_t if_arm = parser_parse_bb();
-
-				assert(ctxstack_len < 32 && "condstack overflow");
-				ifstack[ctxstack_len] = if_arm;
-				condstack[ctxstack_len] = cond;
-				ctxstack_len++;
-			}
-		done:;
-
-			// [0] -> [1] -> [2] -> [3] -> [4]
-			//  \------\------\------\------\--> [end]
-
-			// [0] -> [1] -> [2] -> [3] -> [4]
-			//  \------\------\------\------\--> [else] -> [end]
-
-			pir_rblock_t end = parser_enter_new_bb();
-			pir_rblock_t on_false;
-			if (else_case != (pir_rblock_t)-1) {
-				parser_inew_b(else_case, (pir_inst_t){
-					.kind = PIR_JMP,
-					.type = TYPE_NORETURN,
-					.d_jmp = end,
-				});
-				on_false = else_case;
-			} else {
-				on_false = end;
-			}
-
-			pir_rblock_t start = entry;
-			for (u32 i = 0; i < ctxstack_len; i++) {
-				pir_rblock_t on_true = ifstack[i];
-				pir_rinst_t cond = condstack[i];
-
-				parser_inew_b(start, (pir_inst_t){
-					.kind = PIR_IF,
-					.type = TYPE_NORETURN,
-					.d_if.cond = cond,
-					.d_if.on_true = on_true,
-					.d_if.on_false = on_false,
-				});
-
-				start = on_true;
-			}
-			break;
+			return parser_if_stmt(label_name, bb);
 		}
-		default: {
-			parser_expr(0);
-
-			// see: vemit_garbage
-			while (parser_ctx.es_len > 0) {
-				vemit_garbage(vpop());
-			}
+		case TOK_WHILE: {}
+		case TOK_FOR: {}
+			assert_not_reached();
+			return bb;
+		default:
 			break;
-		}
 	}
 
-	// TODO: the amount of values on the expression stack
-	//       is very much known and deterministic, this
-	//       could be removed.
-	assert(parser_ctx.es_len == 0);
+	if (label_name != (istr_t)-1) {
+		err_with_pos(label_loc, "label `%s` is not part of a block", sv_from(label_name));
+	}
+
+	switch (parser_ctx.tok.type) {
+		case TOK_BREAK:
+		case TOK_CONTINUE: {
+			parser_break_continue(bb);
+			return bb;
+		}
+		case TOK_RETURN: {
+			assert_not_reached();
+			return bb;
+		}
+		default:
+			break;
+	}
+
+	parser_expr(bb, 0);
+	// flush contents
+	while (parser_ctx.es_len > 0) {
+		vemit(bb, vpop());
+	}
+
+	return bb;
 }
 
-void parser_fn_def_stmt() {
+void parser_function() {
 	istr_t fn_name;
 	loc_t fn_name_loc;
 
@@ -1139,10 +564,8 @@ fparsed:
 		.name_loc = fn_name_loc,
 	};
 
-	parser_ctx.cproc.entry = parser_enter_new_bb();
-	
 	// add default scope for arguments
-	parser_push_scope();
+	parser_new_scope(-1, -1, -1, SCOPE_FUNCTION);
 
 	// allocate with scratch buffer..
 	u32 args = 0;
@@ -1195,6 +618,7 @@ fparsed:
 	// (a: T, b: T): ...
 	//             ^
 
+	// TODO: support tuples, you know you want to..
 	if (parser_ctx.tok.type == TOK_COLON) {
 		parser_next();
 		if (parser_ctx.tok.type == TOK_OPAR) {
@@ -1244,7 +668,11 @@ fparsed:
 	
 	if (parser_ctx.tok.type != TOK_EOF) {
 		if (parser_ctx.tok.type == TOK_OBRACE) {
-			parser_parse_syn_scope(false);
+			pir_rblock_t entry = pir_new_block(&parser_ctx.cproc);
+			parser_check(TOK_OBRACE);
+			pir_rblock_t fall_through = parser_open_block(-1, entry);
+			(void)fall_through;
+			// TODO: fall_through is the block that the natural flow of execution reaches in a function
 		} else if (parser_ctx.tok.type == TOK_ASM) {
 			assert(0 && "TODO: asm unimplemented");
 		} else {
@@ -1271,6 +699,46 @@ fparsed:
 	});
 }
 
+void parser_import() {
+	if (parser_ctx.has_done_imports) {
+		parser_unexpected("import declaration must come before code");
+	}
+
+	loc_t path_loc = parser_ctx.tok.loc; // TODO: extend to end of path
+	istr_t *fields = (istr_t *)alloc_scratch(0);
+	u32 fields_len = 0;
+	do {
+		parser_next();
+		istr_t field = parser_ctx.tok.lit;
+		parser_expect(TOK_IDENT);
+		fields[fields_len++] = field;
+	} while(parser_ctx.tok.type == TOK_DOT);
+	// commit
+	alloc_scratch(fields_len * sizeof(istr_t));
+	{
+		fs_rnode_t module = fs_register_import(parser_ctx.module, fields, fields_len, path_loc);
+		istr_t module_ident = fields[fields_len - 1];
+
+		// check duplicate import
+		for (u32 i = 0; i < parser_ctx.is_len; i++) {
+			parser_import_t *is = &parser_ctx.is[i];
+			if (is->module == module) {
+				err_with_pos(path_loc, "error: duplicate import");
+			} else if (is->name == module_ident) {
+				err_with_pos(path_loc, "error: import name `%s` already used", sv_from(module_ident));
+			}
+		}
+
+		// insert import
+		assert(parser_ctx.is_len < ARRAYLEN(parser_ctx.is));
+		parser_ctx.is[parser_ctx.is_len++] = (parser_import_t){
+			.module = module,
+			.name = module_ident, // TODO: import ... as ...
+		};
+	}
+	alloc_reset((u8 *)fields);
+}
+
 void parser_top_stmt() {
 	if (parser_ctx.tok.type != TOK_IMPORT) {
 		parser_ctx.has_done_imports = true;
@@ -1278,47 +746,11 @@ void parser_top_stmt() {
 	
 	switch (parser_ctx.tok.type) {
 		case TOK_IMPORT:
-			if (parser_ctx.has_done_imports) {
-				parser_unexpected("import declaration must come before code");
-			}
-
-			loc_t path_loc = parser_ctx.tok.loc; // TODO: extend to end of path
-			istr_t *fields = (istr_t *)alloc_scratch(0);
-			u32 fields_len = 0;
-			do {
-				parser_next();
-				istr_t field = parser_ctx.tok.lit;
-				parser_expect(TOK_IDENT);
-				fields[fields_len++] = field;
-			} while(parser_ctx.tok.type == TOK_DOT);
-			// commit
-			alloc_scratch(fields_len * sizeof(istr_t));
-			{
-				fs_rnode_t module = fs_register_import(parser_ctx.module, fields, fields_len, path_loc);
-				istr_t module_ident = fields[fields_len - 1];
-
-				// check duplicate import
-				for (u32 i = 0; i < parser_ctx.is_len; i++) {
-					parser_import_t *is = &parser_ctx.is[i];
-					if (is->module == module) {
-						err_with_pos(path_loc, "error: duplicate import");
-					} else if (is->name == module_ident) {
-						err_with_pos(path_loc, "error: import name `%s` already used", sv_from(module_ident));
-					}
-				}
-
-				// insert import
-				assert(parser_ctx.is_len < ARRAYLEN(parser_ctx.is));
-				parser_ctx.is[parser_ctx.is_len++] = (parser_import_t){
-					.module = module,
-					.name = module_ident, // TODO: import ... as ...
-				};
-			}
-			alloc_reset((u8 *)fields);
+			parser_import();
 			break;
 		case TOK_FN:
 		case TOK_PUB:
-			parser_fn_def_stmt();
+			parser_function();
 			break;
 		default:
 			parser_unexpected("expected toplevel statement");

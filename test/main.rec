@@ -1,15 +1,11 @@
-fn add(a: i32, b: i32): i32 {
-    return a + b
-}
-
-fn set_test(): i32 {
-    v: i32 = 10
-    a: i32 = add(10, v)
-    return a
-}
-
-fn boolean() {
-    if (a) {
-        
+fn test() {
+    a: if (a) {
+        1
+    } else if (b) {
+        a: {
+            2
+        }
+    } else {
+        continue :a
     }
 }

@@ -61,7 +61,7 @@ const char *relative_path_of_exe(void) {
 	return strdup(make_relative(scratch, exe_path));
 }
 
-void err_with_pos(loc_t loc, const char *fmt, ...) {
+void NORETURN err_with_pos(loc_t loc, const char *fmt, ...) {
 	char buf[256];
 	
 	va_list args;
@@ -75,7 +75,7 @@ void err_with_pos(loc_t loc, const char *fmt, ...) {
 	longjmp(err_diag.unwind, 1);
 }
 
-void err_without_pos(const char *fmt, ...) {
+void NORETURN err_without_pos(const char *fmt, ...) {
 	va_list args;
 	va_start(args, fmt);
 	vsnprintf(err_diag.err_string, sizeof(err_diag.err_string), fmt, args);
@@ -247,6 +247,12 @@ static void _dump_inst(pir_proc_t *proc, pir_inst_t *inst) {
 			}
 			eprintf("\n");
 			break;
+		case PIR_JMP:
+			eprintf("jmp :%u\n", inst->d_jmp);
+			break;
+		case PIR_IF:
+			eprintf("if %s goto :%u else :%u\n", _inst_str(proc, inst->d_if.cond), inst->d_if.on_true, inst->d_if.on_false);
+			break;
 		default:
 			assert_not_reached();
 	}
@@ -260,13 +266,66 @@ void dump_proc(pir_proc_t *proc) {
 	for (pir_rblock_t i = 0; i < arrlenu(proc->blocks); i++) {
 		pir_block_t *block = &proc->blocks[i];
 		eprintf("%u:\n", i);
-		for (pir_rinst_t j = block->first; j < block->first + block->len; j++) {
+
+		// iterate over linked list
+		u32 dbg_size = 0;
+		for (pir_rinst_t j = block->first; j != (pir_rinst_t)-1; j = proc->insts[j].next) {
 			pir_inst_t *inst = &proc->insts[j];
 
 			eprintf("\t");
 			_dump_inst(proc, inst);
 			// reset
 			alloc_reset(sc);
+			dbg_size++;
 		}
+		assert(dbg_size == block->len && "block->len is incorrect");
 	}
+}
+
+// allocates using alloc_* functions
+const char *tok_dbg_str(token_t tok) {
+	// handle identifiers
+
+	u8 *p;
+
+	bool requires_quotes = true;
+	const char *str = NULL;
+	u32 len;
+
+	// passing { .lit = -1, .type = TOK_IDENT } will return "identifier"
+	// so you can do something like: "unexpected `x`, expected identifier"
+	//                             : "unexpected `x`, expected `+=`"
+
+	if (TOK_HAS_LIT(tok.type) && tok.lit == (istr_t)-1) {
+		requires_quotes = false;
+	}
+	
+	if (TOK_HAS_LIT(tok.type) && tok.lit != (istr_t)-1) {
+		str = sv_from(tok.lit);
+		len = strlen(str);
+	}
+    #define X(val, lit) \
+		else if (val == tok.type) str = lit, len = strlen(lit);
+    TOK_X_LIST
+    #undef X
+
+	if (requires_quotes) {
+		p = alloc_scratch(len + 2 + 1);
+		sprintf((char *)p, "`%s`", str);
+	} else {
+		p = alloc_scratch(len + 1);
+		strcpy((char *)p, str);
+	}
+
+	return (const char *)p;
+}
+
+const char *tok_literal_representation(tok_t tok) {
+	switch (tok) {
+		#define X(val, lit) \
+			case val: return lit;
+		TOK_X_LIST
+		#undef X
+	}
+	assert_not_reached();
 }

@@ -6,8 +6,6 @@ pir_inst_t *pir_at(pir_proc_t *proc, pir_rinst_t inst) {
 	return &proc->insts[inst];
 }
 
-// TODO: pir_bb_insert()
-
 pir_rinst_t pir_insert_after(pir_proc_t *proc, pir_rblock_t bb_ref, pir_rinst_t at, pir_inst_t inst) {
 	pir_rinst_t id = arrlenu(proc->insts);
 	inst.id = id;
@@ -23,11 +21,18 @@ pir_rinst_t pir_insert_after(pir_proc_t *proc, pir_rblock_t bb_ref, pir_rinst_t 
 		bb->last = id;
 	} else {
 		pir_inst_t *at_inst = pir_at(proc, at);
-		pir_inst_t *next_inst = pir_at(proc, at_inst->next);
+
+		if (at == bb->last) {
+			bb->last = id;
+		}
+
+		if (at_inst->next != (pir_rinst_t)-1) {
+			pir_inst_t *next_inst = pir_at(proc, at_inst->next);
+			next_inst->prev = id;
+		}
 
 		at_inst->next = id;
-		next_inst->prev = id;
-
+		
 		inst.prev = at;
 		inst.next = at_inst->next;
 	}
@@ -50,10 +55,17 @@ pir_rinst_t pir_insert_before(pir_proc_t *proc, pir_rblock_t bb_ref, pir_rinst_t
 		bb->last = id;
 	} else {
 		pir_inst_t *at_inst = pir_at(proc, at);
-		pir_inst_t *prev_inst = pir_at(proc, at_inst->prev);
+
+		if (at == bb->first) {
+			bb->first = id;
+		}
+
+		if (at_inst->next != (pir_rinst_t)-1) {
+			pir_inst_t *prev_inst = pir_at(proc, at_inst->prev);
+			prev_inst->next = id;
+		}
 
 		at_inst->prev = id;
-		prev_inst->next = id;
 
 		inst.prev = at_inst->prev;
 		inst.next = at;
