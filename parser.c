@@ -471,6 +471,117 @@ void parser_break_continue(pir_rblock_t bb) {
 	}
 }
 
+// while () : () {}
+// while () {}
+// while {}
+pir_rblock_t parser_while(istr_t label_name, pir_rblock_t bb) {
+	// cond:
+	//     cond()
+	// body:
+	//     body()
+	// inc:
+	//     inc()
+	// end:
+
+	// while () : () {}
+	pir_rblock_t cond = (pir_rblock_t)-1;
+	pir_rinst_t cond_inst = (pir_rinst_t)-1;
+	pir_rblock_t inc = (pir_rblock_t)-1;
+
+	parser_next();
+	// while ()
+	//       ^
+	if (parser_ctx.tok.type == TOK_OPAR) {
+		parser_next();
+		cond = pir_new_block(&parser_ctx.cproc);
+		parser_expr(cond, 0);
+		parser_expect(TOK_CPAR);
+
+		cond_inst = vemit(cond, vpop_bottom());
+
+		parser_inew(bb, (pir_inst_t){
+			.kind = PIR_JMP,
+			.type = TYPE_NORETURN,
+			.d_jmp = cond,
+		});
+	}
+
+	// while () : () {}
+	//          ^
+	if (parser_ctx.tok.type == TOK_COLON && cond != (pir_rblock_t)-1) {
+		inc = pir_new_block(&parser_ctx.cproc);
+		parser_next();
+		parser_expect(TOK_OPAR);
+		parser_expr(inc, 0);
+		parser_expect(TOK_CPAR);
+	}
+
+	// while () : () {}
+	//               ^
+
+	pir_rblock_t pred = pir_new_block(&parser_ctx.cproc);
+	pir_rblock_t body = pir_new_block(&parser_ctx.cproc);
+
+	if (cond == (pir_rblock_t)-1) {
+		parser_inew(bb, (pir_inst_t){
+			.kind = PIR_JMP,
+			.type = TYPE_NORETURN,
+			.d_jmp = body,
+		});
+	} else {
+		parser_inew(cond, (pir_inst_t){
+			.kind = PIR_IF,
+			.type = TYPE_NORETURN,
+			.d_if.cond = cond_inst,
+			.d_if.on_true = body,
+			.d_if.on_false = pred,
+		});
+		if (inc != (pir_rblock_t)-1) {
+			parser_inew(inc, (pir_inst_t){
+				.kind = PIR_JMP,
+				.type = TYPE_NORETURN,
+				.d_jmp = cond,
+			});
+		}
+	}
+	
+	pir_rblock_t continue_target = cond != (pir_rblock_t)-1 ? cond : body;
+
+	pir_rblock_t body_bottom = body;
+	parser_new_scope(label_name, continue_target, pred, SCOPE_LOOP);
+	{
+		body_bottom = parser_block(body_bottom);
+	}
+	parser_pop_scope();
+
+	// body -> jmp cond
+	// body -> jmp inc -> jmp cond
+	// body -> jmp body
+
+	// inc implies cond
+	if (inc != (pir_rblock_t)-1) {
+		parser_inew(body_bottom, (pir_inst_t){
+			.kind = PIR_JMP,
+			.type = TYPE_NORETURN,
+			.d_jmp = inc,
+		});
+	} else if (cond != (pir_rblock_t)-1) {
+		parser_inew(body_bottom, (pir_inst_t){
+			.kind = PIR_JMP,
+			.type = TYPE_NORETURN,
+			.d_jmp = cond,
+		});
+	} else {
+		parser_inew(body_bottom, (pir_inst_t){
+			.kind = PIR_JMP,
+			.type = TYPE_NORETURN,
+			.d_jmp = body,
+		});
+	}
+
+	return pred;
+}
+
 // let v: T = expr
 // mut v: T = expr
 void parser_var_decl(pir_rblock_t bb) {
@@ -543,7 +654,9 @@ pir_rblock_t parser_stmt(pir_rblock_t bb) {
 		case TOK_IF: {
 			return parser_if_stmt(label_name, bb);
 		}
-		case TOK_WHILE: {}
+		case TOK_WHILE: {
+			return parser_while(label_name, bb);
+		}
 		case TOK_FOR: {}
 			assert_not_reached();
 			return bb;

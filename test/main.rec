@@ -1,6 +1,7 @@
-fn test(a: i32, b: i32): i32 {
-    return a + b
-
-    mut c: i32
-    c = 23
+fn test(a: i32): i32 {
+    mut inc: i32 = 0
+    while (a) : (inc++) {
+        1 + 1
+    }
+    return inc
 }

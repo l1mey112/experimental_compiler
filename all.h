@@ -551,6 +551,7 @@ struct parser_value_t {
 enum parser_scope_kind_t {
 	SCOPE_FUNCTION,
 	SCOPE_BLOCK,
+	SCOPE_LOOP,
 	SCOPE_SWITCH_BLOCK,
 };
 
