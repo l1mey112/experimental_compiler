@@ -302,6 +302,7 @@ enum typeinfo_kind_t {
 	_TYPE_CONCRETE_MAX,
 	//
 	TYPE_UNKNOWN,
+	TYPE_TUPLE,
 	TYPE_FN,
 	TYPE_PTR,
 	// TYPE_OPTION,
@@ -319,16 +320,20 @@ extern u32 typeinfo_concrete_istr_size;
 struct typeinfo_t {
 	typeinfo_kind_t kind;
 
+	bool is_named; // module.lit for named types 
+	fs_rnode_t module;
+	istr_t name;
+
 	union {
 		struct {
-			istr_t lit;
-		} d_unknown;
-		struct {
 			type_t *args;
-			type_t *rets;
 			u8 args_len;
-			u8 rets_len;
+			type_t ret;
 		} d_fn;
+		struct {
+			type_t *elems;
+			u8 len;
+		} d_tuple;
 		type_t type_ref;
 	};
 
@@ -341,7 +346,7 @@ struct typeinfo_t {
 	}; */
 };
 
-type_t type_new(typeinfo_t typeinfo);
+type_t type_new(typeinfo_t typeinfo, loc_t loc);
 typeinfo_t *type_get(type_t type);
 type_t type_new_inc_mul(type_t type);
 const char *type_dbg_str(type_t type);
@@ -366,7 +371,6 @@ struct pir_proc_t {
 	loc_t name_loc;
 	type_t type;
 	u16 args;
-	u16 rets;
 	pir_local_t *locals;
 	pir_block_t *blocks;
 	pir_inst_t *insts;
@@ -507,7 +511,7 @@ struct sym_t {
 };
 
 extern sym_t *table;
-rsym_t table_new(sym_t sym);
+rsym_t table_new(loc_t loc, sym_t sym);
 rsym_t table_retrieve_field(fs_rnode_t mod, istr_t lit);
 bool table_resolve(sym_resolve_t *resolve, fs_rnode_t src_module, loc_t loc);
 void table_dump(bool list_ir);

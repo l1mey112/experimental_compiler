@@ -4,9 +4,9 @@
 
 sym_t *table = NULL;
 
-rsym_t table_new(sym_t sym) {
-	if (sym.key >= 0) {
-		assert(hmgeti(table, sym.key) == -1);
+rsym_t table_new(loc_t loc, sym_t sym) {
+	if (hmgeti(table, sym.key) != -1) {
+		err_with_pos(loc, "error: symbol `%s` already defined", sv_from(sym.key));
 	}
 
 	hmputs(table, sym);

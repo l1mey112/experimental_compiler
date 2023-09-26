@@ -174,6 +174,8 @@ static void _dump_inst(marker_ctx_t *ctx, pir_proc_t *proc, pir_inst_t *inst) {
 		eprintf("%%%-3u = ", inst->id);
 	} */
 	u32 line_len = 0;
+	(void)line_len;
+	(void)_padding_to_size;
 	// if (inst->kind != PIR_LSTORE && inst->kind != PIR_RETURN) {
 	if (!(inst->type == TYPE_VOID || inst->type == TYPE_NORETURN)) {
 		line_len += eprintf("%s = ", _inst_str(proc, inst->id));

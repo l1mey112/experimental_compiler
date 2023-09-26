@@ -10,7 +10,7 @@ parser_ctx_t parser_ctx;
 istr_t typeinfo_concrete_istr[_TYPE_CONCRETE_MAX];
 u32 typeinfo_concrete_istr_size;
 
-type_t parser_get_type(istr_t lit) {
+type_t parser_get_type(fs_rnode_t module, istr_t lit) {
 	for (u32 i = 0; i < typeinfo_concrete_istr_size; i++) {
 		if (typeinfo_concrete_istr[i] == lit) {
 			return (type_t)i;
@@ -18,28 +18,10 @@ type_t parser_get_type(istr_t lit) {
 	}
 	return type_new((typeinfo_t){
 		.kind = TYPE_UNKNOWN,
-		.d_unknown.lit = lit,
-	});
-}
-
-type_t parser_parse_type() {
-	type_t type;
-
-	switch (parser_ctx.tok.type) {
-		case TOK_MUL:
-			parser_next();
-			return type_new_inc_mul(parser_parse_type());
-		case TOK_IDENT:
-			// terminating condition
-			type = parser_get_type(parser_ctx.tok.lit);
-			break;
-		default:
-			parser_unexpected("expected type definition");
-	}
-
-	parser_next();
-
-	return type;
+		.is_named = true,
+		.module = module,
+		.name = lit,
+	}, (loc_t){});
 }
 
 // -1 for not found
@@ -50,6 +32,94 @@ int parser_import_ident(istr_t name) {
 		}
 	}
 	return -1;
+}
+
+type_t parser_parse_type(fs_rnode_t default_module) {
+	loc_t initial_pos = parser_ctx.tok.loc;
+	type_t type;
+
+	switch (parser_ctx.tok.type) {
+		case TOK_MUL:
+			parser_next();
+			type = parser_parse_type(default_module);
+			// *() not allowed.
+			if (type == TYPE_VOID) {
+				err_with_pos(initial_pos, "can't have a pointer to void type");
+			}
+			return type_new_inc_mul(type);
+		case TOK_IDENT: {
+			istr_t initial = parser_ctx.tok.lit;
+			parser_next();
+			if (parser_ctx.tok.type == TOK_DOT) {
+				parser_next();
+				istr_t ref = parser_ctx.tok.lit;
+				parser_expect(TOK_IDENT);
+				int id;
+				if ((id = parser_import_ident(initial)) == -1) {
+					err_with_pos(initial_pos, "unknown module `%s`", sv_from(initial));
+				}
+				fs_rnode_t module = parser_ctx.is[id].module;
+				type = parser_get_type(module, ref);
+			} else {
+				type = parser_get_type(default_module, initial);
+			}
+			// terminating condition
+			break;
+		}
+		case TOK_OPAR: {
+			type_t *elems = NULL;
+			type_t single = (type_t)-1;
+			bool first = true;
+			parser_next();
+			while (parser_ctx.tok.type != TOK_CPAR) {
+				type_t type = parser_parse_type(parser_ctx.module);
+				
+				if (first) {
+					single = type;
+				} else {
+					if (single != (type_t)-1) {
+						arrpush(elems, single);
+						single = (type_t)-1;
+					}
+					arrpush(elems, type);					
+				}
+
+				if (parser_ctx.tok.type == TOK_COMMA) {
+					parser_next();
+				} else if (parser_ctx.tok.type != TOK_CPAR) {
+					parser_unexpected("expected `,` or `)`");
+				}
+
+				first = false;
+			}
+			parser_next();
+
+			if (single != (type_t)-1) {
+				return single;
+			} else if (elems == NULL) {
+				return TYPE_VOID;
+			} else {
+				// what? this isn't rust!
+				for (u32 i = 0; i < arrlen(elems); i++) {
+					type_t type = elems[i];
+					if (type == TYPE_VOID) {
+						err_with_pos(initial_pos, "can't contain void type in tuple");
+					}
+				}
+			}
+			type = type_new((typeinfo_t){
+				.kind = TYPE_TUPLE,
+				.d_tuple.elems = elems,
+				.d_tuple.len = arrlen(elems),
+			}, (loc_t){});
+			// terminating condition
+			break;
+		}
+		default:
+			parser_unexpected("expected type definition");
+	}
+
+	return type;
 }
 
 void parser_parse_ident(void) {
@@ -205,7 +275,7 @@ void parser_expr(pir_rblock_t bb, u8 prec) {
 		switch (token.type) {
 			case TOK_AS:
 				parser_next();
-				vcast(parser_parse_type(), parser_ctx.tok.loc);
+				vcast(parser_parse_type(parser_ctx.module), parser_ctx.tok.loc);
 				break;
 			case TOK_OPAR: {
 				pir_rinst_t *cl = (pir_rinst_t *)alloc_scratch(0);
@@ -611,7 +681,7 @@ void parser_var_decl(pir_rblock_t bb) {
 	//        ^
 
 	loc_t type_loc = parser_ctx.tok.loc;
-	type_t type = parser_parse_type();
+	type_t type = parser_parse_type(parser_ctx.module);
 
 	if (parser_ctx.tok.type == TOK_ASSIGN) {
 		has_init = true;
@@ -769,7 +839,7 @@ fparsed:
 		parser_expect(TOK_IDENT);
 		parser_expect(TOK_COLON);
 		loc_t type_loc = parser_ctx.tok.loc;
-		type_t type = parser_parse_type();
+		type_t type = parser_parse_type(parser_ctx.module);
 		// TODO: extend the current loc to the end of the type
 
 		pir_local_t arg = {
@@ -800,8 +870,7 @@ fparsed:
 	// commit: arg_types_loc
 	(void)alloc_scratch(args * sizeof(type_t));
 
-	u32 rets = 0;
-	type_t *ret_types = (type_t*)alloc_scratch(0);
+	type_t ret = TYPE_VOID;
 
 	// ): i32
 	// ): (i32, T)
@@ -809,48 +878,18 @@ fparsed:
 	// (a: T, b: T): ...
 	//             ^
 
-	// TODO: support tuples, you know you want to..
 	if (parser_ctx.tok.type == TOK_COLON) {
 		parser_next();
-		if (parser_ctx.tok.type == TOK_OPAR) {
-			parser_next();
-			while (parser_ctx.tok.type != TOK_CPAR) {
-				loc_t type_loc = parser_ctx.tok.loc;
-				type_t type = parser_parse_type();
-
-				(void)type_loc; // TODO: return type locations aren't used yet
-
-				ret_types[rets++] = type;
-
-				if (parser_ctx.tok.type == TOK_COMMA) {
-					parser_next();
-				} else if (parser_ctx.tok.type != TOK_CPAR) {
-					parser_unexpected("expected `,` or `)`");
-				}
-			}
-			parser_next();
-		} else {
-			loc_t type_loc = parser_ctx.tok.loc;
-			type_t type = parser_parse_type();
-
-			(void)type_loc; // TODO: return type locations aren't used yet
-
-			ret_types[rets++] = type;
-		}
+		ret = parser_parse_type(parser_ctx.module);
 	}
-
-	// commit: ret_types_loc
-	(void)alloc_scratch(rets * sizeof(type_t));
 
 	parser_ctx.cproc.type = type_new((typeinfo_t){
 		.kind = TYPE_FN,
 		.d_fn.args = arg_types,
 		.d_fn.args_len = args,
-		.d_fn.rets = ret_types,
-		.d_fn.rets_len = rets,
-	});
+		.d_fn.ret = ret,
+	}, (loc_t){});
 	parser_ctx.cproc.args = args;
-	parser_ctx.cproc.rets = rets;
 
 	// ): (a, b) {}
 	//           ^
@@ -879,7 +918,7 @@ fparsed:
 	istr_t symbol_name = fs_module_symbol_str(parser_ctx.module, parser_ctx.cproc.name);
 
 	// TODO: duplicate name_loc for proc?
-	table_new((sym_t){
+	table_new(fn_name_loc, (sym_t){
 		.key = symbol_name,
 		.kind = SYM_PROC,
 		.module = parser_ctx.module,

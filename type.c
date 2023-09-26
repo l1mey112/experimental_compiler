@@ -12,35 +12,53 @@ static const char *ctinfo_str[_TYPE_CONCRETE_MAX] = {
 
 static bool cmp_typeinfo(typeinfo_t *a, typeinfo_t *b) {
 	typeinfo_kind_t a_type = a->kind, b_type = b->kind;
+	
+	if (a->is_named && b->is_named) {
+		// may be TYPE_UNKNOWN
+		return a->module == b->module && a->name == b->name;
+	}
 
 	if (a_type != b_type) {
 		return false;
 	}
 
 	switch (a_type) {
-		case TYPE_UNKNOWN:
-			return a->d_unknown.lit == b->d_unknown.lit;
 		case TYPE_PTR:
 			return a->type_ref == b->type_ref;
 		case TYPE_FN:
-			if (a->d_fn.args_len != b->d_fn.args_len || a->d_fn.rets_len != b->d_fn.rets_len) {
+			if (a->d_fn.args_len != b->d_fn.args_len || a->d_fn.ret != b->d_fn.ret) {
 				return false;
 			}
-			return memcmp(a->d_fn.args, b->d_fn.args, a->d_fn.args_len) == 0 && memcmp(a->d_fn.rets, b->d_fn.rets, a->d_fn.rets_len) == 0;
+			return memcmp(a->d_fn.args, b->d_fn.args, a->d_fn.args_len) == 0;
 		default:
 			assert_not_reached();
 	}
 }
 
-type_t type_new(typeinfo_t typeinfo) {
+// reference T -> TYPE_UNKNOWN 
+// define T -> TYPE_!UNKNOWN probably TYPE_STRUCT
+type_t type_new(typeinfo_t typeinfo, loc_t loc) {
 	assert(typeinfo.kind >= _TYPE_CONCRETE_MAX);
 
 	// intern types, there aren't that many in an average program
 	// the same types are often used in the same context
 	// so iterate backwards instead
+	//
+	// will also define types, but not redefine them
 	for (u32 i = type_len; i > 0;) {
 		i--;
-		if (cmp_typeinfo(&types[i], &typeinfo)) {
+		typeinfo_t *nb = &types[i];
+		if (cmp_typeinfo(nb, &typeinfo)) {
+			// for is_named:
+			//     a->module == b->module && a->name == b->name
+			// but may have different typeinfo_kind_t, meaning referencing same name
+			if (typeinfo.is_named && nb->is_named && typeinfo.kind != nb->kind) {
+				if (typeinfo.kind != TYPE_UNKNOWN) {
+					// therefore nb->kind != TYPE_UNKNOWN, and is already defined
+					err_with_pos(loc, "type '%s' already defined", fs_module_symbol_sv(typeinfo.module, typeinfo.name));
+				}
+			}
+
 			return i + _TYPE_CONCRETE_MAX;
 		}
 	}
@@ -66,7 +84,8 @@ type_t type_new_inc_mul(type_t type) {
 		.type_ref = type,
 	};
 
-	return type_new(typeinfo);
+	// loc_t won't be accessed, .is_named = false
+	return type_new(typeinfo, (loc_t){});
 }
 
 static u8 *p;
@@ -87,11 +106,23 @@ static void _type_dbg_str(type_t type) {
 
 	switch (typeinfo->kind) {
 		case TYPE_UNKNOWN:
-			COMMIT(sprintf((char *)p, "%s", sv_from(typeinfo->d_unknown.lit)));
+			assert(typeinfo->is_named);
+			COMMIT(sprintf((char *)p, "%s", fs_module_symbol_sv(typeinfo->module, typeinfo->name)));
 			return;
 		case TYPE_PTR:
 			*p = '*', p++;
 			_type_dbg_str(typeinfo->type_ref);
+			return;
+		case TYPE_TUPLE:
+			COMMIT(sprintf((char *)p, "("));
+			for (u32 i = 0; i < typeinfo->d_tuple.len; i++) {
+				type_t elem = typeinfo->d_tuple.elems[i];
+				_type_dbg_str(elem);
+				if (i + 1 < typeinfo->d_tuple.len) {
+					COMMIT(sprintf((char *)p, ", "));
+				}
+			}
+			COMMIT(sprintf((char *)p, ")"));
 			return;
 		case TYPE_FN:
 			COMMIT(sprintf((char *)p, "fn ("));
@@ -103,19 +134,9 @@ static void _type_dbg_str(type_t type) {
 				}
 			}
 			COMMIT(sprintf((char *)p, ")"));
-			if (typeinfo->d_fn.rets_len == 1) {
+			if (typeinfo->d_fn.ret != TYPE_VOID) {
 				COMMIT(sprintf((char *)p, ": "));
-				_type_dbg_str(typeinfo->d_fn.rets[0]);
-			} else if (typeinfo->d_fn.rets_len > 1) {
-				COMMIT(sprintf((char *)p, ": ("));
-				for (u32 i = 0; i < typeinfo->d_fn.rets_len; i++) {
-					type_t ret = typeinfo->d_fn.rets[i];
-					_type_dbg_str(ret);
-					if (i + 1 < typeinfo->d_fn.rets_len) {
-						COMMIT(sprintf((char *)p, ", "));
-					}
-				}
-				COMMIT(sprintf((char *)p, ")"));
+				_type_dbg_str(typeinfo->d_fn.ret);
 			}
 			return;
 		default:
@@ -129,7 +150,8 @@ const char *type_dbg_str(type_t type) {
 	//u32 len = _type_dbg_str(p, type);
 
 	
-	p = alloc_scratch(0);
+	// ARGHHHHH
+	p = alloc_scratch(1024);
 	u8 *oldp = p;
 
 	_type_dbg_str(type);
@@ -138,5 +160,5 @@ const char *type_dbg_str(type_t type) {
 
 	p[nwritten] = '\0';
 
-	return (const char *)alloc_scratch(nwritten + 1);
+	return (const char *)oldp;
 }
