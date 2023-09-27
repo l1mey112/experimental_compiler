@@ -676,34 +676,49 @@ void parser_var_decl(pir_rblock_t bb) {
 	loc_t name_loc = parser_ctx.tok.loc;
 
 	parser_expect(TOK_IDENT);
-	parser_expect(TOK_COLON);
 	// let a: T
-	//        ^
+	//     ^
 
-	loc_t type_loc = parser_ctx.tok.loc;
-	type_t type = parser_parse_type(parser_ctx.module);
+	loc_t type_loc;
+	type_t type = TYPE_UNKNOWN;
+	if (parser_ctx.tok.type == TOK_COLON) {
+		parser_next();
+		// let a: T
+		//        ^
+		type_loc = parser_ctx.tok.loc;
+		type = parser_parse_type(parser_ctx.module);
+	}
 
 	if (parser_ctx.tok.type == TOK_ASSIGN) {
 		has_init = true;
 		parser_next();
 		parser_expr(bb, 0);
-	} else if (!is_mut) {
-		err_with_pos(name_loc, "immutable variables must have an initial value");
+	} else {
+		if (!is_mut) {
+			err_with_pos(name_loc, "immutable variables must have an initial value");
+		}
+		if (type == TYPE_UNKNOWN) {
+			err_with_pos(type_loc, "variables without an initial value must have a type");
+		}
 	}
 
-	pir_rlocal_t local = parser_new_local((pir_local_t){
+	pir_rlocal_t local = arrlenu(parser_ctx.cproc.locals);
+	pir_rinst_t def = (pir_rinst_t)-1;
+
+	if (has_init) {
+		parser_value_t val = vpop_bottom();
+		pir_rinst_t ival = vemit(bb, val);
+		def = vstore_local(bb, local, ival, name_loc); // TODO: the loc_t should span the whole expression...
+	}
+
+	(void)parser_new_local((pir_local_t){
 		.name = name,
 		.name_loc = name_loc,
 		.type = type,
 		.type_loc = type_loc,
 		.is_mut = is_mut,
+		.def = def,
 	});
-
-	if (has_init) {
-		parser_value_t val = vpop_bottom();
-		pir_rinst_t ival = vemit(bb, val);
-		vstore_local(bb, local, ival, name_loc); // TODO: the loc_t should span the whole expression...
-	}
 }
 
 pir_rblock_t parser_stmt(pir_rblock_t bb) {
@@ -848,6 +863,7 @@ fparsed:
 			.type = type,
 			.type_loc = type_loc,
 			.is_arg = true,
+			.def = (pir_rinst_t)-1,
 		};
 
 		for (u32 i = 0; i < args; i++) {

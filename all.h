@@ -362,6 +362,7 @@ struct pir_local_t {
 	loc_t name_loc;
 	type_t type;
 	loc_t type_loc;
+	pir_rinst_t def; // -1 for none
 	bool is_arg;
 	bool is_mut;
 };

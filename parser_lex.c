@@ -1,7 +1,6 @@
 #include "all.h"
 
 #include <ctype.h>
-#include <assert.h>
 #include <stdio.h>
 
 static bool is_id_begin(u8 ch) {
