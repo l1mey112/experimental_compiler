@@ -514,7 +514,7 @@ struct sym_t {
 extern sym_t *table;
 rsym_t table_new(loc_t loc, sym_t sym);
 rsym_t table_retrieve_field(fs_rnode_t mod, istr_t lit);
-bool table_resolve(sym_resolve_t *resolve, fs_rnode_t src_module, loc_t loc);
+void table_resolve(sym_resolve_t *resolve, fs_rnode_t src_module, loc_t loc);
 void table_dump(bool list_ir);
 
 // TODO: move to table.c?

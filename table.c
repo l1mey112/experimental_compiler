@@ -37,9 +37,9 @@ rsym_t table_retrieve_field(fs_rnode_t mod, istr_t lit) {
 }
 
 // attempt to resolve
-bool table_resolve(sym_resolve_t *resolve, fs_rnode_t src_module, loc_t loc) {
+void table_resolve(sym_resolve_t *resolve, fs_rnode_t src_module, loc_t loc) {
 	if (resolve->sym != SYM_UNRESOLVED) {
-		return true;
+		return;
 	}
 	rsym_t sym;
 	if ((sym = table_retrieve_field(resolve->d_unresolved.module, resolve->d_unresolved.lit)) == SYM_UNRESOLVED) {
@@ -51,7 +51,6 @@ bool table_resolve(sym_resolve_t *resolve, fs_rnode_t src_module, loc_t loc) {
 	}
 
 	resolve->sym = sym;
-	return true;
 }
 
 void table_dump(bool list_ir) {
