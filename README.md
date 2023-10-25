@@ -13,5 +13,8 @@ a product of 2 years of personal notes, ideas, and references on compiler implem
 1. high level IR: https://me.l-m.dev/?p=1693877970##
 1. place IR: https://me.l-m.dev/?p=1694130775##
 1. module system: https://me.l-m.dev/?p=1694392391##
+1. CFG control flow in a single pass: https://me.l-m.dev/?p=1695686376##
+1. tuples: https://me.l-m.dev/?p=1695755696##
+1. type checker: https://me.l-m.dev/?p=1696388201##
 
 ... more to come
