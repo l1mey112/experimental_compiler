@@ -42,7 +42,7 @@ type_t check_sget(rsym_t sym) {
 
 // infer type, by walking down the chain
 type_t check_evaluate_type(fs_rnode_t module, pir_proc_t *proc, pir_rinst_t def) {
-	pir_inst_t *ins = pir_at(proc, def);
+	/* pir_inst_t *ins = pir_at(proc, def);
 	if (ins->type != TYPE_UNKNOWN) {
 		return ins->type;
 	}
@@ -52,7 +52,7 @@ type_t check_evaluate_type(fs_rnode_t module, pir_proc_t *proc, pir_rinst_t def)
 		case PIR_LLOAD: {
 			if (ins->d_load.is_sym) {
 				table_resolve(&ins->d_load.sym, module, ins->loc);
-				return 
+				return;
 			} else {
 				return check_tlget(proc, ins->d_load.local);
 			}
@@ -60,7 +60,7 @@ type_t check_evaluate_type(fs_rnode_t module, pir_proc_t *proc, pir_rinst_t def)
 		case PIR_NOP:
 		default:
 			assert_not_reached();
-	}
+	} */
 }
 
 // infer type, by walking up the chain to a terminal instruction
@@ -110,7 +110,7 @@ void check_proc(sym_t *sym, pir_proc_t *proc) {
 }
 
 void check_all(void) {
-	for (rsym_t i = 0; i < hmlenu(table); i++) {
+	/* for (rsym_t i = 0; i < hmlenu(table); i++) {
 		sym_t *sym = &table[i];
 		switch (sym->kind) {
 			case SYM_PROC:
@@ -120,5 +120,5 @@ void check_all(void) {
 				// TODO: handle constants, globals and such
 				assert_not_reached();
 		}
-	}
+	} */
 }

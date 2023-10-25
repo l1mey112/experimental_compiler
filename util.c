@@ -48,6 +48,10 @@ const char *make_relative(const char *cwd, const char *path) {
 }
 
 const char *relative_path_of_exe(void) {
+	#ifndef __linux__ 
+		#error "not portable to places other than linux"
+	#endif
+
 	char *scratch = (char *)alloc_scratch(0);
 	ssize_t len = readlink("/proc/self/exe", scratch, PATH_MAX);
 	if (len < 0) {
@@ -127,12 +131,19 @@ static const char *_sym_str(sym_resolve_t sym) {
 	// local = local(0)
 	//         arg(0)
 
+	fs_rnode_t mod;
+	istr_t lit;
+
 	if (sym.sym == (rsym_t)-1) {
-		snprintf(s, 256, "%s", fs_module_symbol_sv(sym.d_unresolved.module, sym.d_unresolved.lit));
+		mod = sym.d_unresolved.module;
+		lit = sym.d_unresolved.lit;
 	} else {
-		assert(0 && "TODO: implementing repr of resolved symbols");
-		// eprintf("sym(%s)\n", fs_module_symbol_sv(inst->d_sym.d_unresolved.module, inst->d_sym.d_unresolved.lit));
+		sym_t *symp = &table[sym.sym];
+		mod = symp->module;
+		lit = symp->key;
 	}
+
+	snprintf(s, 256, "%s", fs_module_symbol_sv(mod, lit));
 
 	return s;
 }

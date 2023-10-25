@@ -1,3 +1,5 @@
+const a = 30
+
 fn test() {
 	let a = 1
 }

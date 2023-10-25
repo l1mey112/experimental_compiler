@@ -71,7 +71,10 @@ void table_dump(bool list_ir) {
 					dump_proc(&sym->proc);
 				}
 				break;
-			case SYM_CONST:
+			case SYM_CONST: {
+				eprintf("\t:%u -> :%u\n", sym->constant.bb_start, sym->constant.bb_end);
+				break;
+			}
 			case SYM_GLOBAL:
 				assert_not_reached();
 		}

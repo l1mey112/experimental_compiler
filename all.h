@@ -1,5 +1,6 @@
 #pragma once
 
+#define _GNU_SOURCE
 #include <stdio.h>
 #include <stdint.h>
 #include <stddef.h>
@@ -151,6 +152,7 @@ void err_without_pos(const char *fmt, ...)
 	X(TOK_FN, "fn") \
 	X(TOK_ASM, "asm") \
 	X(TOK_AS, "as") \
+	X(TOK_CONST, "const") \
 	X(TOK_RETURN, "return") \
 	X(TOK_LET, "let") \
 	X(TOK_MUT, "mut") \
@@ -508,6 +510,10 @@ struct sym_t {
 	bool is_pub;
 	union {
 		pir_proc_t proc;
+		struct sym_const {
+			pir_rblock_t bb_start;
+			pir_rblock_t bb_end;
+		} constant;
 	};
 };
 
@@ -594,20 +600,24 @@ struct parser_ctx_t {
 	parser_import_t is[64]; // import stack
 	u32 is_len;
 	pir_proc_t cproc;
+	rsym_t init;
+	bool is_toplevel;
 	fs_rfile_t file;
 	fs_rnode_t module;
 	bool has_done_imports;
 };
 
 extern parser_ctx_t parser_ctx;
-void parser_parse_file(fs_rfile_t file);
+void parser_parse_file(rsym_t init, fs_rfile_t file);
 token_t parser_lex_next(void);
 void parser_expect(tok_t expected);
 void parser_check(tok_t expected);
 void NORETURN parser_unexpected(const char *err);
 void parser_next(void);
 
+pir_proc_t *parser_current_proc(void);
 pir_rinst_t parser_inew(pir_rblock_t bb, pir_inst_t inst);
+pir_rblock_t parser_bnew(void);
 pir_rinst_t vstore_local(pir_rblock_t bb, pir_rlocal_t dest, pir_rinst_t src, loc_t loc);
 pir_rinst_t vstore_sym(pir_rblock_t bb, sym_resolve_t dest, pir_rinst_t src, loc_t loc);
 pir_rinst_t vstore(pir_rblock_t bb, parser_value_t dest, pir_rinst_t src, loc_t loc);

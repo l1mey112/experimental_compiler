@@ -10,9 +10,27 @@ const char* __asan_default_options(void) { return "detect_leaks=0"; }
 
 err_diag_t err_diag;
 
-#ifndef __linux__ 
-	#error "not portable to places other than linux"
-#endif
+rsym_t create_init() {
+	type_t fn_void_void = type_new((typeinfo_t){
+		.kind = TYPE_FN,
+		.d_fn.args = NULL,
+		.d_fn.args_len = 0,
+		.d_fn.ret = TYPE_VOID,
+	}, (loc_t){});
+
+	pir_proc_t init = {
+		.name = sv_move("_init"),
+		.type = fn_void_void,
+	};
+
+	return table_new((loc_t){}, (sym_t){
+		.key = sv_move("_init"),
+		.module = -1,
+		.kind = SYM_PROC,
+		.type = fn_void_void,
+		.proc = init,
+	});
+}
 
 int main(int argc, const char *argv[]) {
 	if (argc != 2) {
@@ -64,16 +82,18 @@ int main(int argc, const char *argv[]) {
 		typeinfo_concrete_istr_size = i;
 	}
 
+	rsym_t init = create_init();
+
 	// queue can grow
 	for (fs_rfile_t i = 0; i < fs_files_queue_len; i++) {
 		u32 old_sz = fs_files_queue_len;
 		eprintf("parsing file '%s'\n", fs_files_queue[i].fp);
-		parser_parse_file(i);
+		parser_parse_file(init, i);
 		if (old_sz != fs_files_queue_len) {
 			eprintf("  %u new files added\n", fs_files_queue_len - old_sz);
 		}
 	}
-	check_all();
+	//check_all();
 	retval = 0;
 done:
 

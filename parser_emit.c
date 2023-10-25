@@ -2,8 +2,23 @@
 
 #include "stb_ds.h"
 
+// may be invalidated
+pir_proc_t *parser_current_proc(void) {
+	if (parser_ctx.is_toplevel) {
+		return &table[parser_ctx.init].proc;
+	} else {
+		return &parser_ctx.cproc;
+	}
+}
+
+pir_rblock_t parser_bnew(void) {
+	pir_proc_t *pir_proc = parser_current_proc();
+	return pir_new_block(pir_proc);
+}
+
 pir_rinst_t parser_inew(pir_rblock_t bb, pir_inst_t inst) {
-	return pir_insert(&parser_ctx.cproc, bb, inst);
+	pir_proc_t *pir_proc = parser_current_proc();
+	return pir_insert(pir_proc, bb, inst);
 }
 
 pir_rinst_t vstore_local(pir_rblock_t bb, pir_rlocal_t dest, pir_rinst_t src, loc_t loc) {
@@ -106,12 +121,14 @@ void vpush_ilit(istr_t lit, loc_t loc, bool negate) {
 }
 
 pir_rlocal_t parser_locate_local(istr_t ident) {
+	pir_proc_t *procp = parser_current_proc();
+
 	for (pir_rlocal_t i = parser_ctx.ss_len; i > 0;) {
 		i--;
 		parser_scope_t span = parser_ctx.ss[i];
 		for (pir_rlocal_t j = span.var_end; j > span.var_start;) {
 			j--;
-			pir_local_t local = parser_ctx.cproc.locals[j];
+			pir_local_t local = procp->locals[j];
 			if (local.name == ident) {
 				return j;
 			}
@@ -121,36 +138,39 @@ pir_rlocal_t parser_locate_local(istr_t ident) {
 };
 
 pir_rlocal_t parser_new_local(pir_local_t local) {
+	pir_proc_t *procp = parser_current_proc();
+
 	// make sure var doesn't already exist
 	pir_rlocal_t rlocal = parser_locate_local(local.name);
 	if (rlocal != (pir_rlocal_t)-1) {
-		if (parser_ctx.cproc.locals[rlocal].is_arg) {
+		if (procp->locals[rlocal].is_arg) {
 			err_with_pos(local.name_loc, "redefinition of argument `%s`", sv_from(local.name));
 		} else {
 			err_with_pos(local.name_loc, "redefinition of variable `%s` in same scope", sv_from(local.name));
 		}
-		// err_with_pos(parser_ctx.cproc.locals[rlocal].loc, "previous definition was here");
+		// err_with_pos(procp->locals[rlocal].loc, "previous definition was here");
 	} else {
-		rlocal = arrlenu(parser_ctx.cproc.locals);
+		rlocal = arrlenu(procp->locals);
 	}
 
 	parser_ctx.ss[parser_ctx.ss_len - 1].var_end++;
-	arrpush(parser_ctx.cproc.locals, local);
+	arrpush(procp->locals, local);
 
 	// TODO: should be fine to remove...
-	assert(parser_ctx.ss[parser_ctx.ss_len - 1].var_end == arrlenu(parser_ctx.cproc.locals));
+	assert(parser_ctx.ss[parser_ctx.ss_len - 1].var_end == arrlenu(procp->locals));
 
 	return rlocal;
 }
 
 void vpush_id(istr_t ident, fs_rnode_t module_ref, loc_t loc) {
+	pir_proc_t *procp = parser_current_proc();
 	assert(parser_ctx.es_len < ARRAYLEN(parser_ctx.es));
 
 	pir_rlocal_t rlocal = parser_locate_local(ident);
 	bool resolved = rlocal != (pir_rlocal_t)-1;
 
 	parser_value_t val;
-	type_t type = rlocal == (pir_rlocal_t)-1 ? TYPE_UNRESOLVED : parser_ctx.cproc.locals[rlocal].type;
+	type_t type = rlocal == (pir_rlocal_t)-1 ? TYPE_UNRESOLVED : procp->locals[rlocal].type;
 
 	module_ref = module_ref == (fs_rnode_t)-1 ? parser_ctx.module : module_ref;
 
@@ -176,17 +196,20 @@ void vpush_id(istr_t ident, fs_rnode_t module_ref, loc_t loc) {
 }
 
 void vpush_inst(pir_rinst_t inst, loc_t loc) {
+	pir_proc_t *procp = parser_current_proc();
+
 	assert(parser_ctx.es_len < ARRAYLEN(parser_ctx.es));
 	parser_ctx.es[parser_ctx.es_len++] = (parser_value_t){
 		.kind = VAL_INST,
 		.loc = loc,
-		.type = parser_ctx.cproc.insts[inst].type,
+		.type = procp->insts[inst].type,
 		.d_inst = inst,
 	};
 }
 
 void vpush_inst_back(pir_rinst_t inst) {
-	vpush_inst(inst, parser_ctx.cproc.insts[inst].loc);
+	pir_proc_t *procp = parser_current_proc();
+	vpush_inst(inst, procp->insts[inst].loc);
 }
 
 void vinfix(pir_rblock_t bb, tok_t tok, loc_t loc) {

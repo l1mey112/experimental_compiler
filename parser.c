@@ -148,11 +148,13 @@ void parser_new_scope_from(parser_scope_t ps) {
 
 // `bb` and `pred` are only needed on "continue" and "break" scopes
 void parser_new_scope(istr_t label, pir_rblock_t bb, pir_rblock_t pred, parser_scope_kind_t kind) {
+	pir_proc_t *procp = parser_current_proc();
+	
 	parser_new_scope_from((parser_scope_t){
 		.label = label,
 		.kind = kind,
-		.var_start = arrlenu(parser_ctx.cproc.locals),
-		.var_end = arrlenu(parser_ctx.cproc.locals),
+		.var_start = arrlenu(procp->locals),
+		.var_end = arrlenu(procp->locals),
 		.bb = bb,
 		.pred = pred,
 	});
@@ -381,10 +383,10 @@ pir_rblock_t parser_if_stmt(istr_t label_name, pir_rblock_t entry) {
 	bool has_entered = false;
 	bool has_else = false;
 
-	pir_rblock_t pred = pir_new_block(&parser_ctx.cproc);
+	pir_rblock_t pred = parser_bnew();
 
 	if (label_name != (istr_t)-1) {
-		pir_rblock_t next = pir_new_block(&parser_ctx.cproc);
+		pir_rblock_t next = parser_bnew();
 		parser_inew(entry, (pir_inst_t){
 			.kind = PIR_JMP,
 			.loc = parser_ctx.tok.loc,
@@ -424,7 +426,7 @@ pir_rblock_t parser_if_stmt(istr_t label_name, pir_rblock_t entry) {
 		pir_rblock_t on_true;
 
 		if (!has_else) {
-			on_true = pir_new_block(&parser_ctx.cproc);
+			on_true = parser_bnew();
 			
 			// (expr) {}
 			// ^
@@ -434,7 +436,7 @@ pir_rblock_t parser_if_stmt(istr_t label_name, pir_rblock_t entry) {
 
 			pir_rinst_t cond = vemit(arm_entry, vpop_bottom()); 
 
-			on_false = pir_new_block(&parser_ctx.cproc);
+			on_false = parser_bnew();
 
 			parser_inew(arm_entry, (pir_inst_t){
 				.kind = PIR_IF,
@@ -487,7 +489,7 @@ pir_rblock_t parser_open_block(istr_t label_name, pir_rblock_t entry) {
 	// pred:
 	//
 	if (label_name != (istr_t)-1) {
-		pir_rblock_t next = pir_new_block(&parser_ctx.cproc);
+		pir_rblock_t next = parser_bnew();
 		parser_inew(entry, (pir_inst_t){
 			.kind = PIR_JMP,
 			.loc = parser_ctx.tok.loc,
@@ -495,7 +497,7 @@ pir_rblock_t parser_open_block(istr_t label_name, pir_rblock_t entry) {
 			.d_jmp = next,
 		});
 		entry = next;
-		pred = pir_new_block(&parser_ctx.cproc);
+		pred = parser_bnew();
 	}
 
 	parser_new_scope(label_name, entry, pred, SCOPE_BLOCK);
@@ -573,7 +575,7 @@ pir_rblock_t parser_while(istr_t label_name, pir_rblock_t bb) {
 	//       ^
 	if (parser_ctx.tok.type == TOK_OPAR) {
 		parser_next();
-		cond = pir_new_block(&parser_ctx.cproc);
+		cond = parser_bnew();
 		parser_expr(cond, 0);
 		parser_expect(TOK_CPAR);
 
@@ -589,7 +591,7 @@ pir_rblock_t parser_while(istr_t label_name, pir_rblock_t bb) {
 	// while () : () {}
 	//          ^
 	if (parser_ctx.tok.type == TOK_COLON && cond != (pir_rblock_t)-1) {
-		inc = pir_new_block(&parser_ctx.cproc);
+		inc = parser_bnew();
 		parser_next();
 		parser_expect(TOK_OPAR);
 		parser_expr(inc, 0);
@@ -599,8 +601,8 @@ pir_rblock_t parser_while(istr_t label_name, pir_rblock_t bb) {
 	// while () : () {}
 	//               ^
 
-	pir_rblock_t pred = pir_new_block(&parser_ctx.cproc);
-	pir_rblock_t body = pir_new_block(&parser_ctx.cproc);
+	pir_rblock_t pred = parser_bnew();
+	pir_rblock_t body = parser_bnew();
 
 	if (cond == (pir_rblock_t)-1) {
 		parser_inew(bb, (pir_inst_t){
@@ -702,7 +704,9 @@ void parser_var_decl(pir_rblock_t bb) {
 		}
 	}
 
-	pir_rlocal_t local = arrlenu(parser_ctx.cproc.locals);
+	
+	pir_proc_t *procp = parser_current_proc();
+	pir_rlocal_t local = arrlenu(procp->locals);
 	pir_rinst_t def = (pir_rinst_t)-1;
 
 	if (has_init) {
@@ -719,6 +723,56 @@ void parser_var_decl(pir_rblock_t bb) {
 		.is_mut = is_mut,
 		.def = def,
 	});
+}
+
+// const v: T = ...
+void parser_toplevel_const() {
+	parser_next();
+
+	istr_t name = parser_ctx.tok.lit;
+	loc_t name_loc = parser_ctx.tok.loc;
+
+	parser_expect(TOK_IDENT);
+	// const a: T
+	//       ^
+
+	type_t type = TYPE_UNKNOWN;
+	if (parser_ctx.tok.type == TOK_COLON) {
+		parser_next();
+		// const a: T
+		//          ^
+		type = parser_parse_type(parser_ctx.module);
+	}
+
+	if (parser_ctx.tok.type != TOK_ASSIGN) {
+		err_with_pos(name_loc, "all constants must have an initialiser");
+	}
+
+	parser_next();
+
+	pir_proc_t *init = &table[parser_ctx.init].proc;
+	pir_rblock_t entry = parser_bnew();
+	
+	// TODO: parser_expr() should influcence control flow
+	pir_rblock_t end = entry; parser_expr(entry, 0);
+
+	parser_value_t val = vpop_bottom();
+	pir_rinst_t ival = vemit(end, val);
+
+	rsym_t constant = table_new(name_loc, (sym_t){
+		.key = name,
+		.kind = SYM_CONST,
+		.type = type,
+		.module = parser_ctx.module,
+		.name_loc = name_loc,
+		.is_pub = false, // TODO: impl pub
+		.constant.bb_start = entry,
+		.constant.bb_end = end,
+	});
+
+	vstore_sym(end, (sym_resolve_t){
+		.sym = constant,
+	}, ival, name_loc); // TODO: the loc_t should span the whole expression...
 }
 
 pir_rblock_t parser_stmt(pir_rblock_t bb) {
@@ -914,7 +968,7 @@ fparsed:
 	
 	if (parser_ctx.tok.type != TOK_EOF) {
 		if (parser_ctx.tok.type == TOK_OBRACE) {
-			pir_rblock_t entry = pir_new_block(&parser_ctx.cproc);
+			pir_rblock_t entry = parser_bnew();
 			parser_check(TOK_OBRACE);
 			pir_rblock_t fall_through = parser_open_block(-1, entry);
 			(void)fall_through;
@@ -996,7 +1050,11 @@ void parser_top_stmt() {
 			break;
 		case TOK_FN:
 		case TOK_PUB:
+			parser_ctx.is_toplevel = false;
 			parser_function();
+		case TOK_CONST:
+			parser_ctx.is_toplevel = true;
+			parser_toplevel_const();
 			break;
 		default:
 			parser_unexpected("expected toplevel statement");
@@ -1004,7 +1062,7 @@ void parser_top_stmt() {
 	}
 }
 
-void parser_parse_file(fs_rfile_t file) {
+void parser_parse_file(rsym_t init, fs_rfile_t file) {
 	fs_file_t *f = fs_filep(file);
 	
 	parser_ctx = (parser_ctx_t){
@@ -1014,6 +1072,8 @@ void parser_parse_file(fs_rfile_t file) {
 		.plast_nl = f->data,
 		.file = file,
 		.module = f->module,
+		.init = init,
+		.is_toplevel = true,
 	};
 
 	parser_next(); // tok
