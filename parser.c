@@ -750,7 +750,6 @@ void parser_toplevel_const() {
 
 	parser_next();
 
-	pir_proc_t *init = &table[parser_ctx.init].proc;
 	pir_rblock_t entry = parser_bnew();
 	
 	// TODO: parser_expr() should influcence control flow
@@ -769,6 +768,8 @@ void parser_toplevel_const() {
 		.constant.bb_start = entry,
 		.constant.bb_end = end,
 	});
+
+	ival = parser_iconst(end, ival, name_loc); // TODO: should span expr
 
 	vstore_sym(end, (sym_resolve_t){
 		.sym = constant,

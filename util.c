@@ -271,6 +271,9 @@ static void _dump_inst(marker_ctx_t *ctx, pir_proc_t *proc, pir_inst_t *inst) {
 			_ctx_add(ctx, inst->d_if.on_true);
 			eprintf("if %s goto :%u else :%u\n", _inst_str(proc, inst->d_if.cond), inst->d_if.on_true, inst->d_if.on_false);
 			break;
+		case PIR_CONSTANT:
+			eprintf("constant(%u)\n", inst->d_constant_src);
+			break;
 		default:
 			assert_not_reached();
 	}

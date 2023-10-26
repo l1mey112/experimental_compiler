@@ -408,6 +408,7 @@ enum pir_inst_kind_t {
 	// PIR_FIELD
 	PIR_JMP,
 	PIR_IF,
+	PIR_CONSTANT,
 };
 
 struct sym_resolve_t {
@@ -484,6 +485,8 @@ struct pir_inst_t {
 			pir_rblock_t on_true;
 			pir_rblock_t on_false;
 		} d_if;
+		// PIR_CONST
+		pir_rinst_t d_constant_src;
 	};
 };
 
@@ -617,6 +620,8 @@ void parser_next(void);
 
 pir_proc_t *parser_current_proc(void);
 pir_rinst_t parser_inew(pir_rblock_t bb, pir_inst_t inst);
+pir_rinst_t parser_iconst(pir_rblock_t bb, pir_rinst_t src, loc_t loc);
+type_t parser_itypeof(pir_rinst_t src);
 pir_rblock_t parser_bnew(void);
 pir_rinst_t vstore_local(pir_rblock_t bb, pir_rlocal_t dest, pir_rinst_t src, loc_t loc);
 pir_rinst_t vstore_sym(pir_rblock_t bb, sym_resolve_t dest, pir_rinst_t src, loc_t loc);

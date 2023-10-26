@@ -11,6 +11,11 @@ pir_proc_t *parser_current_proc(void) {
 	}
 }
 
+type_t parser_itypeof(pir_rinst_t src) {
+	pir_proc_t *procp = parser_current_proc();
+	return procp->insts[src].type;
+}
+
 pir_rblock_t parser_bnew(void) {
 	pir_proc_t *pir_proc = parser_current_proc();
 	return pir_new_block(pir_proc);
@@ -19,6 +24,15 @@ pir_rblock_t parser_bnew(void) {
 pir_rinst_t parser_inew(pir_rblock_t bb, pir_inst_t inst) {
 	pir_proc_t *pir_proc = parser_current_proc();
 	return pir_insert(pir_proc, bb, inst);
+}
+
+pir_rinst_t parser_iconst(pir_rblock_t bb, pir_rinst_t src, loc_t loc) {
+	return parser_inew(bb, (pir_inst_t){
+		.kind = PIR_CONSTANT,
+		.loc = loc,
+		.type = parser_itypeof(src),
+		.d_constant_src = src,
+	});
 }
 
 pir_rinst_t vstore_local(pir_rblock_t bb, pir_rlocal_t dest, pir_rinst_t src, loc_t loc) {
@@ -196,13 +210,13 @@ void vpush_id(istr_t ident, fs_rnode_t module_ref, loc_t loc) {
 }
 
 void vpush_inst(pir_rinst_t inst, loc_t loc) {
-	pir_proc_t *procp = parser_current_proc();
+	type_t type = parser_itypeof(inst);
 
 	assert(parser_ctx.es_len < ARRAYLEN(parser_ctx.es));
 	parser_ctx.es[parser_ctx.es_len++] = (parser_value_t){
 		.kind = VAL_INST,
 		.loc = loc,
-		.type = procp->insts[inst].type,
+		.type = type,
 		.d_inst = inst,
 	};
 }
