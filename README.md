@@ -1,7 +1,5 @@
 # an experimental effort to create a programming language that i want to use
 
-> An idiot admires complexity, a genius admires simplicity.
-
 a product of 2 years of personal notes, ideas, and references on compiler implementations and language design.
 
 1. rationale: https://me.l-m.dev/?p=1692183638##
